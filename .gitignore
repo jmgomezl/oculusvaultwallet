@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.local
+.DS_Store
+*.log
+npm-debug.log*
+coverage/
+.vite/
+.cache/
+
+# Editor / harness
+.claude/
+.idea/
+.vscode/
+
+# TS build info
+*.tsbuildinfo

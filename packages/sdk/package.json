@@ -1,0 +1,56 @@
+{
+  "name": "@oculusvault/sdk",
+  "version": "0.1.0",
+  "description": "Non-custodial Hedera wallet SDK for Telegram Mini Apps (secp256k1, EVM-alias auto-create, Mirror Node)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "require": "./dist/server.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx ./test/*.test.ts"
+  },
+  "keywords": [
+    "hedera",
+    "telegram",
+    "mini-app",
+    "wallet",
+    "non-custodial",
+    "secp256k1",
+    "hbar",
+    "web3"
+  ],
+  "dependencies": {
+    "@hashgraph/sdk": "^2.62.0",
+    "@noble/ciphers": "^1.2.1",
+    "@noble/curves": "^1.8.1",
+    "@noble/hashes": "^1.7.1",
+    "ethers": "^6.13.5",
+    "hash-wasm": "^4.12.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
