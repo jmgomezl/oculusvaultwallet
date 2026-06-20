@@ -10,9 +10,9 @@ npm install @oculusvault/sdk
 ```
 
 ```ts
-import { HederaWallet, LocalEncryptedKeyProvider, MemoryStorage } from "@oculusvault/sdk";
+import { OculusVault, LocalEncryptedKeyProvider, MemoryStorage } from "@oculusvault/sdk";
 
-const wallet = new HederaWallet({
+const wallet = new OculusVault({
   network: "testnet",
   keyProvider: new LocalEncryptedKeyProvider(new MemoryStorage()),
 });

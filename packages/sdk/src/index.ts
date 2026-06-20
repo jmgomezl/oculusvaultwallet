@@ -6,9 +6,9 @@
  */
 
 // Core wallet API
-export { HederaWallet } from "./wallet.js";
+export { OculusVault } from "./wallet.js";
 export type {
-  HederaWalletOptions,
+  OculusVaultOptions,
   UnlockArgs,
   OnIncomingOptions,
 } from "./wallet.js";

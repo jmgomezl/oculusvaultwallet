@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  HederaWallet,
+  OculusVault,
   type Balance,
   type HistoryItem,
   type WalletIdentity,
@@ -12,7 +12,7 @@ import { Qr } from "./Qr.js";
 type Phase = "loading" | "error" | "locked" | "ready";
 
 export function App() {
-  const walletRef = useRef<HederaWallet | null>(null);
+  const walletRef = useRef<OculusVault | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string>("");
   const [auth, setAuth] = useState<AuthResult | null>(null);
@@ -150,7 +150,7 @@ function Dashboard({
   identity,
   setIdentity,
 }: {
-  wallet: HederaWallet;
+  wallet: OculusVault;
   identity: WalletIdentity;
   setIdentity: (id: WalletIdentity) => void;
 }) {
@@ -247,7 +247,7 @@ function ReceiveTab({ identity }: { identity: WalletIdentity }) {
   );
 }
 
-function SendTab({ wallet, onSent }: { wallet: HederaWallet; onSent: () => void }) {
+function SendTab({ wallet, onSent }: { wallet: OculusVault; onSent: () => void }) {
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -328,7 +328,7 @@ function HistoryList({ items }: { items: HistoryItem[] }) {
   );
 }
 
-function ExportRow({ wallet }: { wallet: HederaWallet }) {
+function ExportRow({ wallet }: { wallet: OculusVault }) {
   const [key, setKey] = useState<string>("");
   const reveal = async () => setKey(await wallet.exportKey());
   return (

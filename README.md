@@ -114,7 +114,7 @@ npm install @oculusvault/sdk
 
 ```ts
 import {
-  HederaWallet,
+  OculusVault,
   LocalEncryptedKeyProvider,
   TelegramCloudStorage,
   getInitData,
@@ -128,7 +128,7 @@ const { userId } = await fetch("/api/auth/verify", {
 }).then((r) => r.json());
 
 // 2. Build a wallet backed by Telegram CloudStorage.
-const wallet = new HederaWallet({
+const wallet = new OculusVault({
   network: "testnet",
   keyProvider: new LocalEncryptedKeyProvider(TelegramCloudStorage.fromWindow()),
 });
@@ -162,7 +162,7 @@ const verified = verifyTelegramInitData(initData, process.env.TELEGRAM_BOT_TOKEN
 
 | Method | Description |
 | --- | --- |
-| `new HederaWallet({ network, keyProvider, storageNamespace? })` | Construct a wallet. |
+| `new OculusVault({ network, keyProvider, storageNamespace? })` | Construct a wallet. |
 | `hasWallet(userId)` | Whether a wallet exists for this user (create-vs-unlock). |
 | `createOrRecoverWallet({ userId, secret })` → `{ evmAddress, hederaAccountId }` | Provision or unlock. |
 | `getBalance(idOrEvm?)` → `{ hbar, tinybar, usdEstimate }` | Balance via Mirror Node. |
@@ -183,7 +183,7 @@ Lower-level building blocks are also exported: `MirrorClient`, `sendHbar`,
 `KeyProvider` is an interface. The shipped default,
 `LocalEncryptedKeyProvider`, is vendor-free and self-custodial. To use an MPC
 provider (e.g. Web3Auth) or a decentralized key network (Lit PKP), implement the
-same interface and pass it to `HederaWallet` — nothing else changes.
+same interface and pass it to `OculusVault` — nothing else changes.
 
 ---
 

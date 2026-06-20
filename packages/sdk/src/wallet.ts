@@ -1,5 +1,5 @@
 /**
- * HederaWallet — the high-level, reusable API.
+ * OculusVault — the high-level, reusable API.
  *
  * Lifecycle:
  *   1. construct with a network + KeyProvider (+ optional Storage).
@@ -25,7 +25,7 @@ import type {
   WalletIdentity,
 } from "./types.js";
 
-export interface HederaWalletOptions {
+export interface OculusVaultOptions {
   network: HederaNetwork;
   keyProvider: KeyProvider;
   /** Storage-key prefix; defaults to "oculusvault:wallet:v1". */
@@ -52,7 +52,7 @@ export interface OnIncomingOptions {
   replayExisting?: boolean;
 }
 
-export class HederaWallet {
+export class OculusVault {
   readonly network: HederaNetwork;
   private readonly keyProvider: KeyProvider;
   private readonly namespace: string;
@@ -63,7 +63,7 @@ export class HederaWallet {
   private accountId: string | null = null;
   private userId: string | null = null;
 
-  constructor(opts: HederaWalletOptions) {
+  constructor(opts: OculusVaultOptions) {
     this.network = opts.network;
     this.keyProvider = opts.keyProvider;
     this.namespace = opts.storageNamespace ?? "oculusvault:wallet:v1";
