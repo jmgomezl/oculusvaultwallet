@@ -29,5 +29,8 @@ jobs:
       - name: Test SDK
         run: npm test --workspace @oculusvault/sdk
 
+      - name: Test server (vault)
+        run: npm test --workspace @oculusvault/server
+
       - name: Build Mini App
         run: npm run build --workspace @oculusvault/miniapp

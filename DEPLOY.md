@@ -30,7 +30,12 @@ TELEGRAM_BOT_TOKEN=<your BotFather token>   # currently a placeholder
 SESSION_SECRET=<32-byte random hex>
 ALLOW_DEV_AUTH=true                          # BETA: lets the site work in a browser
 CORS_ORIGIN=*
+VAULT_DATA_DIR=./data                        # encrypted records (ciphertext only)
+# TELEGRAM_BOT_TOKENS={"kickoff":"…"}        # other apps that share the vault
 ```
+
+The shared vault persists encrypted records at `/opt/oculusvault/data/vault.json`
+(ciphertext only — back it up like any small datastore).
 
 > ⚠️ **Beta status:** `ALLOW_DEV_AUTH=true` bypasses Telegram verification so the
 > site is demoable in a plain browser. Before treating this as real, set a real

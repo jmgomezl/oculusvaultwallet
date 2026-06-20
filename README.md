@@ -180,6 +180,61 @@ Lower-level building blocks are also exported: `MirrorClient`, `sendHbar`,
 `registerPasskeySecret` / `getPasskeySecret`, `getNetworkConfig`,
 `hashscanTxUrl`, and the `KeyProvider` interface.
 
+## One wallet across many apps (shared vault)
+
+By default Telegram CloudStorage is per-bot, so each app would give a user a
+*separate* wallet. To give a user **one wallet across all your apps** (e.g.
+kickoff, hbadge, OculusVault) — while staying non-custodial — point the key
+provider at the **shared vault**: a backend that stores **only the encrypted
+record**, keyed by the user's Telegram id (which is the same across every bot).
+Decryption always happens client-side; the server can't read a key.
+
+**Server:** register each app's bot token so their users resolve to the same
+vault:
+
+```bash
+TELEGRAM_BOT_TOKEN=<oculusvault bot token>
+TELEGRAM_BOT_TOKENS={"kickoff":"<kickoff bot token>","hbadge":"<hbadge bot token>"}
+```
+
+**Client (e.g. kickoff's Mini App):** authenticate against the shared backend,
+then back the wallet with `RemoteVaultStorage`:
+
+```ts
+import {
+  OculusVault,
+  LocalEncryptedKeyProvider,
+  RemoteVaultStorage,
+  getInitData,
+} from "@oculusvault/sdk";
+
+const VAULT_API = "https://api.oculusvault.com";
+
+// verify initData (with this app's bot) → session token
+const { token } = await fetch(`${VAULT_API}/api/auth/verify`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ initData: getInitData(), appId: "kickoff" }),
+}).then((r) => r.json());
+
+const wallet = new OculusVault({
+  network: "testnet",
+  keyProvider: new LocalEncryptedKeyProvider(
+    new RemoteVaultStorage({ apiBase: VAULT_API, getToken: () => token }),
+  ),
+});
+
+// Same human → same wallet, whether they came from kickoff or OculusVault.
+await wallet.createOrRecoverWallet({ userId, secret: { source: "password", value: pw } });
+```
+
+The user uses the **same secret** (password/passkey) across apps to unlock the
+shared wallet. Vault API: `GET/PUT/DELETE /api/vault` (Bearer session token);
+records are validated to be encrypted and are size-capped.
+
+> Just paying users? You don't need any of this — see "Use it as a dependency":
+> kickoff's backend only needs the recipient address and `sendHbar`.
+
 ### Swapping the key provider
 
 `KeyProvider` is an interface. The shipped default,

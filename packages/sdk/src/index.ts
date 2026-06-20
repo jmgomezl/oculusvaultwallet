@@ -40,6 +40,10 @@ export { LocalEncryptedKeyProvider } from "./keyprovider/LocalEncryptedKeyProvid
 export type { Storage } from "./storage/Storage.js";
 export { MemoryStorage } from "./storage/Storage.js";
 export { TelegramCloudStorage } from "./storage/TelegramCloudStorage.js";
+export {
+  RemoteVaultStorage,
+  type RemoteVaultOptions,
+} from "./storage/RemoteVaultStorage.js";
 
 // Crypto (audited primitives + helpers)
 export {

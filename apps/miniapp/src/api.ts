@@ -1,6 +1,12 @@
 import { getInitData } from "@oculusvault/sdk";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
+
+/** Current session JWT, set after authenticate(); used by RemoteVaultStorage. */
+let currentToken: string | null = null;
+export function getToken(): string | null {
+  return currentToken;
+}
 
 export interface AuthResult {
   userId: string;
@@ -31,7 +37,9 @@ export async function authenticate(): Promise<AuthResult> {
       }`,
     );
   }
-  return res.json();
+  const result = (await res.json()) as AuthResult;
+  currentToken = result.token;
+  return result;
 }
 
 /** Stable-ish per-browser id for dev mode outside Telegram. */

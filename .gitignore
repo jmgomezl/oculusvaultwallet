@@ -8,6 +8,9 @@ build/
 
 # Deployment artifacts (built bundles, server config copies)
 deploy/
+
+# Local vault datastore
+apps/server/data/
 .DS_Store
 *.log
 npm-debug.log*
