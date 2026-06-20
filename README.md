@@ -97,6 +97,11 @@ it bypasses initData verification.**
    appears, and the deposit shows in **History** with a working Hashscan link.
 5. Tap **Export private key** to prove self-custody.
 
+> **Automated check:** `npm run e2e` runs the whole loop headless against
+> testnet (provision → auto-create → receive → balance → history → send) and
+> prints Hashscan links. It accepts the Hedera portal's export names
+> (`ACCOUNT_ID` / `HEX_ENCODED_PRIVATE_KEY`) directly.
+
 ---
 
 ## Use it as a dependency

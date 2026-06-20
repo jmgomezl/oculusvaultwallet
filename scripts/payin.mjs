@@ -21,8 +21,11 @@ import { sendHbar } from "@oculusvault/sdk";
 const [, , target, amountArg, memoArg] = process.argv;
 const amount = amountArg ?? "5";
 const network = process.env.HEDERA_NETWORK ?? "testnet";
-const operatorId = process.env.OPERATOR_ID;
-const operatorKey = process.env.OPERATOR_KEY;
+// Accept the Hedera portal's default variable names as a fallback so you can
+// paste its export straight into .env.
+const operatorId = process.env.OPERATOR_ID ?? process.env.ACCOUNT_ID;
+const operatorKey =
+  process.env.OPERATOR_KEY ?? process.env.HEX_ENCODED_PRIVATE_KEY;
 
 function die(msg) {
   console.error(`\n❌ ${msg}\n`);
@@ -36,7 +39,8 @@ if (!target) {
 }
 if (!operatorId || !operatorKey || operatorKey === "PLACEHOLDER_OPERATOR_KEY") {
   die(
-    "Set OPERATOR_ID and OPERATOR_KEY (a funded testnet account) in your env/.env.\n" +
+    "Set a funded testnet operator in your env/.env: OPERATOR_ID + OPERATOR_KEY\n" +
+      "   (or the Hedera portal names ACCOUNT_ID + HEX_ENCODED_PRIVATE_KEY).\n" +
       "   Get testnet funds at https://portal.hedera.com/",
   );
 }

@@ -17,6 +17,7 @@
     "dev:server": "npm run dev --workspace @oculusvault/server",
     "dev:miniapp": "npm run dev --workspace @oculusvault/miniapp",
     "payin": "node scripts/payin.mjs",
+    "e2e": "node scripts/e2e.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }
