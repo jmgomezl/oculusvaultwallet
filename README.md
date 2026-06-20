@@ -5,6 +5,8 @@ SDK to drop the same wallet into any app. One tap gives a Telegram user a real
 Hedera account that can receive and send HBAR, with balance + history and a
 Hashscan proof for every transaction. **Testnet-first.** Apache-2.0 licensed.
 
+**Live (testnet beta):** [oculusvault.com](https://oculusvault.com) · API at `api.oculusvault.com`
+
 > Built by a Hedera Developer Ambassador as an open-source ecosystem
 > contribution. The driving use case: a recycling machine that pays people
 > small amounts of HBAR — a stranger scans a QR and has a working wallet in

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   OculusVault,
+  isInsideTelegram,
   type Balance,
   type HistoryItem,
   type WalletIdentity,
@@ -8,10 +9,21 @@ import {
 import { authenticate, type AuthResult } from "./api.js";
 import { createWallet, NETWORK_NAME } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
+import { Landing } from "./Landing.js";
 
 type Phase = "loading" | "error" | "locked" | "ready";
 
+/**
+ * Router: inside Telegram, drop straight into the wallet. In a plain browser,
+ * show the public landing page until the visitor chooses to launch the demo.
+ */
 export function App() {
+  const [launched, setLaunched] = useState(() => isInsideTelegram());
+  if (!launched) return <Landing onLaunch={() => setLaunched(true)} />;
+  return <WalletApp />;
+}
+
+function WalletApp() {
   const walletRef = useRef<OculusVault | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string>("");
