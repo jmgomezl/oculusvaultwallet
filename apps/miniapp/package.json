@@ -2,7 +2,7 @@
   "name": "@oculusvault/miniapp",
   "version": "0.1.0",
   "description": "Demo Telegram Mini App for the Hedera wallet SDK",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "scripts": {

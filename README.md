@@ -3,7 +3,7 @@
 A **non-custodial Hedera wallet inside a Telegram Mini App** — and a reusable
 SDK to drop the same wallet into any app. One tap gives a Telegram user a real
 Hedera account that can receive and send HBAR, with balance + history and a
-Hashscan proof for every transaction. **Testnet-first.** MIT licensed.
+Hashscan proof for every transaction. **Testnet-first.** Apache-2.0 licensed.
 
 > Built by a Hedera Developer Ambassador as an open-source ecosystem
 > contribution. The driving use case: a recycling machine that pays people
@@ -202,4 +202,4 @@ npm test --workspace @oculusvault/sdk   # crypto + initData tests
 
 ## License
 
-[MIT](./LICENSE) © Juan Manuel González
+[Apache-2.0](./LICENSE) © Juan Manuel González. See also [NOTICE](./NOTICE).

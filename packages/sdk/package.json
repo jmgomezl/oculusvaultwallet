@@ -2,7 +2,7 @@
   "name": "@oculusvault/sdk",
   "version": "0.1.0",
   "description": "Non-custodial Hedera wallet SDK for Telegram Mini Apps (secp256k1, EVM-alias auto-create, Mirror Node)",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

@@ -368,7 +368,7 @@ function Header() {
 function Footer() {
   return (
     <footer className="footer muted xsmall">
-      Non-custodial · keys stay on your device · open-source (MIT)
+      Non-custodial · keys stay on your device · open-source (Apache-2.0)
     </footer>
   );
 }

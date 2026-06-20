@@ -2,7 +2,7 @@
   "name": "@oculusvault/server",
   "version": "0.1.0",
   "description": "Thin backend: verifies Telegram initData, issues sessions, proxies Mirror Node. Never stores private keys.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "scripts": {

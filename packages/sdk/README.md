@@ -38,4 +38,4 @@ security model, and the end-to-end testnet demo.
 
 ## License
 
-MIT
+Apache-2.0
