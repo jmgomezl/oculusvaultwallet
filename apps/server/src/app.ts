@@ -36,11 +36,47 @@ export interface AppDeps {
   now?: () => number;
 }
 
+/** Minimal in-memory per-IP rate limiter (fixed window). Dependency-free so
+ * the server stays bundleable to a single file. */
+function rateLimit(max: number, windowMs: number) {
+  const hits = new Map<string, { n: number; reset: number }>();
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const now = Date.now();
+    const key = req.ip ?? "unknown";
+    let entry = hits.get(key);
+    if (!entry || entry.reset < now) {
+      entry = { n: 0, reset: now + windowMs };
+      hits.set(key, entry);
+      // Opportunistic prune so the map can't grow unbounded.
+      if (hits.size > 10_000) {
+        for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
+      }
+    }
+    if (++entry.n > max) {
+      res.status(429).json({ error: "rate_limited" });
+      return;
+    }
+    next();
+  };
+}
+
 export function createApp(deps: AppDeps = {}): Express {
   const now = deps.now ?? Date.now;
   const app = express();
+  app.disable("x-powered-by");
+  app.set("trust proxy", 1); // behind nginx — req.ip = X-Forwarded-For client
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
   app.use(cors({ origin: config.corsOrigin }));
   app.use(express.json({ limit: "64kb" }));
+
+  // Auth is the expensive/abusable path; vault writes are per-user state.
+  const authLimiter = rateLimit(30, 60_000);
+  const vaultLimiter = rateLimit(60, 60_000);
 
   const mirror = new MirrorClient(getNetworkConfig(config.network));
   const vault = new VaultStore(config.vaultDataDir);
@@ -89,7 +125,7 @@ export function createApp(deps: AppDeps = {}): Express {
     res.json({ ok: true, network: config.network });
   });
 
-  app.post("/api/auth/verify", (req: Request, res: Response) => {
+  app.post("/api/auth/verify", authLimiter, (req: Request, res: Response) => {
     const initData: unknown = req.body?.initData;
     const appId: string | undefined =
       typeof req.body?.appId === "string" ? req.body.appId : undefined;
@@ -134,7 +170,7 @@ export function createApp(deps: AppDeps = {}): Express {
     res.json({ record: entry.record, updatedAt: entry.updatedAt });
   });
 
-  app.put("/api/vault", requireSession, (req: Authed, res: Response) => {
+  app.put("/api/vault", vaultLimiter, requireSession, (req: Authed, res: Response) => {
     const record: unknown = req.body?.record;
     if (typeof record !== "string" || record.length === 0) {
       return res.status(400).json({ error: "missing_record" });
@@ -157,7 +193,7 @@ export function createApp(deps: AppDeps = {}): Express {
     res.json({ ok: true });
   });
 
-  app.delete("/api/vault", requireSession, (req: Authed, res: Response) => {
+  app.delete("/api/vault", vaultLimiter, requireSession, (req: Authed, res: Response) => {
     const had = vault.delete(req.session!.uid);
     res.status(had ? 200 : 404).json({ ok: had });
   });

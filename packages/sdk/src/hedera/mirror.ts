@@ -26,6 +26,7 @@ export interface ResolvedAccount {
 export class MirrorClient {
   private readonly cfg: NetworkConfig;
   private readonly fetchImpl: typeof fetch;
+  private rateCache: { usdPerHbar: number; at: number } | null = null;
 
   constructor(cfg: NetworkConfig, fetchImpl?: typeof fetch) {
     this.cfg = cfg;
@@ -67,10 +68,41 @@ export class MirrorClient {
     }
   }
 
+  /**
+   * USD per HBAR from the network's own exchange-rate file
+   * (/api/v1/network/exchangerate: cents per hbar_equivalent). Cached for
+   * 5 minutes; returns null on any failure — an estimate must never break
+   * the balance path.
+   */
+  async getUsdPerHbar(): Promise<number | null> {
+    const now = Date.now();
+    if (this.rateCache && now - this.rateCache.at < 300_000) {
+      return this.rateCache.usdPerHbar;
+    }
+    try {
+      const data = await this.get<any>("/api/v1/network/exchangerate");
+      const rate = data?.current_rate;
+      if (!rate?.hbar_equivalent || !rate?.cent_equivalent) return null;
+      const usdPerHbar = rate.cent_equivalent / rate.hbar_equivalent / 100;
+      this.rateCache = { usdPerHbar, at: now };
+      return usdPerHbar;
+    } catch {
+      return null;
+    }
+  }
+
   async getBalance(idOrEvm: string): Promise<Balance> {
-    const acct = await this.resolveAccount(idOrEvm);
+    const [acct, rate] = await Promise.all([
+      this.resolveAccount(idOrEvm),
+      this.getUsdPerHbar(),
+    ]);
     const tinybar = acct?.balanceTinybar ?? 0n;
-    return { hbar: tinybarToHbar(tinybar), tinybar, usdEstimate: null };
+    const hbar = tinybarToHbar(tinybar);
+    return {
+      hbar,
+      tinybar,
+      usdEstimate: rate == null ? null : Number(hbar) * rate,
+    };
   }
 
   /**

@@ -235,6 +235,34 @@ records are validated to be encrypted and are size-capped.
 > Just paying users? You don't need any of this — see "Use it as a dependency":
 > kickoff's backend only needs the recipient address and `sendHbar`.
 
+## Pay links (QR codes, NFC tags, deep links)
+
+Anything that can show a URL — a machine's QR, an NFC tag, a chat message,
+another app — can open the wallet **pre-filled** with a payment:
+
+```
+https://t.me/<YourBot>/app?startapp=pay_<address>_<amount>
+```
+
+The startapp param only allows `[A-Za-z0-9_-]`, so use `-` as the decimal
+separator and in account ids: `pay_0xAbc…_1-5` (1.5 ℏ), `pay_0-0-1234_5`
+(5 ℏ to 0.0.1234). The SDK exports the protocol:
+
+```ts
+import { buildPayLink, parsePayIntent } from "@oculusvault/sdk";
+
+buildPayLink("OculusVaultBot", "0xAbc…", 1.5);
+// → https://t.me/OculusVaultBot/app?startapp=pay_0xAbc…_1-5
+
+parsePayIntent("pay_0-0-1234_5"); // → { to: "0.0.1234", amountHbar: "5" }
+```
+
+Inside the Mini App, `getStartParam()` + `parsePayIntent()` route the user
+straight to a pre-filled, confirm-before-send screen; the Send tab also scans
+QR codes with Telegram's native scanner (`scanQr()`). Intents carry only
+public data (address + amount) — never secrets — and every send still requires
+explicit user confirmation.
+
 ### Swapping the key provider
 
 `KeyProvider` is an interface. The shipped default,

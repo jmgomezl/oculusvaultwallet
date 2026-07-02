@@ -227,6 +227,62 @@ body {
   text-align: center;
   padding: 12px 0;
 }
+
+.usd {
+  margin-top: -2px;
+}
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(232, 181, 99, 0.35);
+  background: rgba(232, 181, 99, 0.08);
+  font-size: 14px;
+}
+.banner strong {
+  color: #e8b563;
+}
+.banner-actions {
+  display: flex;
+  gap: 8px;
+}
+.btn.sm {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+.input-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.btn.scan {
+  flex: 0 0 auto;
+  width: 46px;
+  font-size: 20px;
+  padding: 0;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.confirm-amt {
+  font-size: 22px;
+  font-weight: 700;
+}
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

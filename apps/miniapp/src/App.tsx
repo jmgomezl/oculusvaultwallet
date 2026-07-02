@@ -2,8 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   OculusVault,
   isInsideTelegram,
+  getStartParam,
+  parsePayIntent,
+  canScanQr,
+  scanQr,
+  haptic,
   type Balance,
   type HistoryItem,
+  type PayIntent,
   type WalletIdentity,
 } from "@oculusvault/sdk";
 import { authenticate, type AuthResult } from "./api.js";
@@ -13,12 +19,31 @@ import { Landing } from "./Landing.js";
 
 type Phase = "loading" | "error" | "locked" | "ready";
 
+/** "5.00000000" → "5", "3.99875220" → "3.9987522" — friendlier amounts. */
+function formatHbar(hbar: string): string {
+  if (!hbar.includes(".")) return hbar;
+  return hbar.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+}
+
+function formatUsd(usd: number | null): string | null {
+  if (usd == null) return null;
+  return `≈ $${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+}
+
+function shortAddr(a: string): string {
+  return a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a;
+}
+
 /**
  * Router: inside Telegram, drop straight into the wallet. In a plain browser,
  * show the public landing page until the visitor chooses to launch the demo.
+ * A pay deep-link (?startapp=pay_…) skips the landing too — someone following
+ * a payment link wants the wallet, not marketing.
  */
 export function App() {
-  const [launched, setLaunched] = useState(() => isInsideTelegram());
+  const [launched, setLaunched] = useState(
+    () => isInsideTelegram() || parsePayIntent(getStartParam() ?? "") !== null,
+  );
   if (!launched) return <Landing onLaunch={() => setLaunched(true)} />;
   return <WalletApp />;
 }
@@ -54,6 +79,7 @@ function WalletApp() {
         userId: auth.userId,
         secret: { source: "password", value: password },
       });
+      haptic("success");
       setIdentity(id);
       setPhase("ready");
     },
@@ -77,7 +103,12 @@ function WalletApp() {
     );
 
   return (
-    <Dashboard wallet={walletRef.current!} identity={identity!} setIdentity={setIdentity} />
+    <Dashboard
+      wallet={walletRef.current!}
+      identity={identity!}
+      setIdentity={setIdentity}
+      freshWallet={isNew}
+    />
   );
 }
 
@@ -107,6 +138,7 @@ function UnlockScreen({
     try {
       await onUnlock(pw);
     } catch (e) {
+      haptic("error");
       setErr((e as Error).message);
     } finally {
       setBusy(false);
@@ -161,15 +193,23 @@ function Dashboard({
   wallet,
   identity,
   setIdentity,
+  freshWallet,
 }: {
   wallet: OculusVault;
   identity: WalletIdentity;
   setIdentity: (id: WalletIdentity) => void;
+  freshWallet: boolean;
 }) {
+  // A pay deep-link (NFC tag / QR / t.me link) pre-fills the Send tab.
+  const [intent] = useState<PayIntent | null>(() =>
+    parsePayIntent(getStartParam() ?? ""),
+  );
   const [balance, setBalance] = useState<Balance | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [toast, setToast] = useState<string>("");
-  const [tab, setTab] = useState<"receive" | "send">("receive");
+  const [tab, setTab] = useState<"receive" | "send">(intent ? "send" : "receive");
+  const [revealedKey, setRevealedKey] = useState("");
+  const [backupDone, setBackupDone] = useState(false);
 
   const refresh = useCallback(async () => {
     const [b, h, accountId] = await Promise.all([
@@ -188,7 +228,8 @@ function Dashboard({
     refresh();
     const poll = setInterval(refresh, 6000);
     const stop = wallet.onIncoming((t) => {
-      setToast(`Received ${t.amount} ℏ`);
+      haptic("success");
+      setToast(`Received ${formatHbar(t.amount)} ℏ`);
       refresh();
       setTimeout(() => setToast(""), 4000);
     });
@@ -199,14 +240,44 @@ function Dashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const revealKey = async () => setRevealedKey(await wallet.exportKey());
+  const usd = balance ? formatUsd(balance.usdEstimate) : null;
+
   return (
     <div className="app">
       <Header />
       {toast && <div className="toast">🎉 {toast}</div>}
 
+      {freshWallet && !backupDone && (
+        <div className="banner">
+          <div>
+            <strong>Back up your key.</strong>
+            <span className="muted small">
+              {" "}If you lose your password there is no recovery — export your
+              key once and store it somewhere safe.
+            </span>
+          </div>
+          <div className="banner-actions">
+            <button
+              className="btn sm"
+              onClick={() => {
+                revealKey();
+                setBackupDone(true);
+              }}
+            >
+              Export now
+            </button>
+            <button className="btn ghost sm" onClick={() => setBackupDone(true)}>
+              Later
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="card balance-card">
         <span className="muted small">Balance</span>
-        <div className="balance">{balance ? balance.hbar : "…"} ℏ</div>
+        <div className="balance">{balance ? formatHbar(balance.hbar) : "…"} ℏ</div>
+        {usd && <span className="muted small usd">{usd}</span>}
         <a className="link small" href={wallet.accountUrl()} target="_blank" rel="noreferrer">
           {identity.hederaAccountId ?? "Account auto-creates on first deposit"} ↗
         </a>
@@ -224,11 +295,16 @@ function Dashboard({
       {tab === "receive" ? (
         <ReceiveTab identity={identity} />
       ) : (
-        <SendTab wallet={wallet} onSent={refresh} />
+        <SendTab
+          wallet={wallet}
+          onSent={refresh}
+          prefill={intent}
+          balanceHbar={balance ? balance.hbar : null}
+        />
       )}
 
       <HistoryList items={history} />
-      <ExportRow wallet={wallet} />
+      <ExportRow keyText={revealedKey} onReveal={revealKey} onHide={() => setRevealedKey("")} />
       <Footer />
     </div>
   );
@@ -238,6 +314,7 @@ function ReceiveTab({ identity }: { identity: WalletIdentity }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard.writeText(identity.evmAddress).then(() => {
+      haptic("tap");
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -253,42 +330,131 @@ function ReceiveTab({ identity }: { identity: WalletIdentity }) {
         {copied ? "Copied!" : "Copy address"}
       </button>
       <p className="muted xsmall">
-        Send testnet HBAR here. The first deposit auto-creates your Hedera account.
+        Send {NETWORK_NAME} HBAR here. The first deposit auto-creates your Hedera
+        account.
       </p>
     </div>
   );
 }
 
-function SendTab({ wallet, onSent }: { wallet: OculusVault; onSent: () => void }) {
-  const [to, setTo] = useState("");
-  const [amount, setAmount] = useState("");
+function SendTab({
+  wallet,
+  onSent,
+  prefill,
+  balanceHbar,
+}: {
+  wallet: OculusVault;
+  onSent: () => void;
+  prefill: PayIntent | null;
+  balanceHbar: string | null;
+}) {
+  const [to, setTo] = useState(prefill?.to ?? "");
+  const [amount, setAmount] = useState(prefill?.amountHbar ?? "");
+  const [stage, setStage] = useState<"edit" | "confirm">("edit");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const validate = (): string | null => {
+    const t = to.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(t) && !/^0\.0\.[0-9]+$/.test(t)) {
+      return "Recipient must be a 0x address or 0.0.x account id.";
+    }
+    const a = Number(amount);
+    if (!Number.isFinite(a) || a <= 0) return "Enter a positive HBAR amount.";
+    if (balanceHbar != null && a > Number(balanceHbar)) {
+      return `That’s more than your balance (${formatHbar(balanceHbar)} ℏ).`;
+    }
+    return null;
+  };
+
+  const review = () => {
+    setMsg(null);
+    const err = validate();
+    if (err) {
+      haptic("warning");
+      return setMsg({ ok: false, text: err });
+    }
+    setStage("confirm");
+  };
+
+  const scan = async () => {
+    const text = await scanQr("Scan a wallet address or payment QR");
+    if (!text) return;
+    const intent = parsePayIntent(text);
+    if (!intent) {
+      haptic("warning");
+      return setMsg({ ok: false, text: "That QR doesn’t contain a wallet address." });
+    }
+    haptic("tap");
+    setMsg(null);
+    setTo(intent.to);
+    if (intent.amountHbar) setAmount(intent.amountHbar);
+  };
 
   const send = async () => {
     setMsg(null);
     setBusy(true);
     try {
       const r = await wallet.send(to.trim(), amount.trim());
-      setMsg({ ok: true, text: `Sent! ${r.status}`, url: r.hashscanUrl });
+      haptic("success");
+      setMsg({ ok: true, text: `Sent ${formatHbar(amount)} ℏ · ${r.status}`, url: r.hashscanUrl });
       setTo("");
       setAmount("");
+      setStage("edit");
       onSent();
     } catch (e) {
+      haptic("error");
       setMsg({ ok: false, text: (e as Error).message });
+      setStage("edit");
     } finally {
       setBusy(false);
     }
   };
 
+  if (stage === "confirm") {
+    return (
+      <div className="card">
+        <h3>Confirm transfer</h3>
+        <div className="confirm-row">
+          <span className="muted small">Send</span>
+          <span className="confirm-amt">{formatHbar(amount)} ℏ</span>
+        </div>
+        <div className="confirm-row">
+          <span className="muted small">To</span>
+          <code className="addr">{shortAddr(to.trim())}</code>
+        </div>
+        <div className="confirm-row">
+          <span className="muted small">Network</span>
+          <span>{NETWORK_NAME}</span>
+        </div>
+        <p className="muted xsmall">
+          Transfers are final. A small network fee (~0.001 ℏ) applies.
+        </p>
+        <button className="btn primary" disabled={busy} onClick={send}>
+          {busy ? "Sending…" : "Confirm & send"}
+        </button>
+        <button className="btn ghost" disabled={busy} onClick={() => setStage("edit")}>
+          Back
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="card">
-      <input
-        className="input"
-        placeholder="Recipient (0x… or 0.0.…)"
-        value={to}
-        onChange={(e) => setTo(e.target.value)}
-      />
+      <div className="input-row">
+        <input
+          className="input"
+          placeholder="Recipient (0x… or 0.0.…)"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+        />
+        {canScanQr() && (
+          <button className="btn scan" onClick={scan} title="Scan a QR code">
+            ⌗
+          </button>
+        )}
+      </div>
       <input
         className="input"
         placeholder="Amount (HBAR)"
@@ -296,8 +462,8 @@ function SendTab({ wallet, onSent }: { wallet: OculusVault; onSent: () => void }
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
       />
-      <button className="btn primary" disabled={busy || !to || !amount} onClick={send}>
-        {busy ? "Sending…" : "Send HBAR"}
+      <button className="btn primary" disabled={busy || !to || !amount} onClick={review}>
+        Review transfer
       </button>
       {msg && (
         <p className={msg.ok ? "success" : "error"}>
@@ -328,7 +494,7 @@ function HistoryList({ items }: { items: HistoryItem[] }) {
         >
           <span className={it.direction === "in" ? "amt in" : "amt out"}>
             {it.direction === "in" ? "+" : ""}
-            {it.amount} ℏ
+            {formatHbar(it.amount)} ℏ
           </span>
           <span className="muted xsmall">
             {new Date(it.timestamp).toLocaleString()}
@@ -340,14 +506,20 @@ function HistoryList({ items }: { items: HistoryItem[] }) {
   );
 }
 
-function ExportRow({ wallet }: { wallet: OculusVault }) {
-  const [key, setKey] = useState<string>("");
-  const reveal = async () => setKey(await wallet.exportKey());
+function ExportRow({
+  keyText,
+  onReveal,
+  onHide,
+}: {
+  keyText: string;
+  onReveal: () => void;
+  onHide: () => void;
+}) {
   return (
     <div className="card">
       <h3>Self-custody</h3>
-      {!key ? (
-        <button className="btn" onClick={reveal}>
+      {!keyText ? (
+        <button className="btn" onClick={onReveal}>
           Export private key
         </button>
       ) : (
@@ -355,11 +527,11 @@ function ExportRow({ wallet }: { wallet: OculusVault }) {
           <p className="error xsmall">
             ⚠️ Anyone with this key controls the wallet. Never share it.
           </p>
-          <code className="addr break">{key}</code>
-          <button className="btn" onClick={() => navigator.clipboard.writeText(key)}>
+          <code className="addr break">{keyText}</code>
+          <button className="btn" onClick={() => navigator.clipboard.writeText(keyText)}>
             Copy key
           </button>
-          <button className="btn ghost" onClick={() => setKey("")}>
+          <button className="btn ghost" onClick={onHide}>
             Hide
           </button>
         </>

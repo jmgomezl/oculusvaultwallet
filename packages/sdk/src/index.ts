@@ -82,4 +82,16 @@ export {
   getUnsafeUserId,
   initTelegram,
   isInsideTelegram,
+  getStartParam,
+  canScanQr,
+  scanQr,
+  haptic,
 } from "./telegram/webapp.js";
+
+// Pay intents (deep links / QR / NFC-tag payloads)
+export {
+  parsePayIntent,
+  buildPayParam,
+  buildPayLink,
+  type PayIntent,
+} from "./payIntent.js";
