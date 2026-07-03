@@ -1,8 +1,20 @@
-import { getInitData } from "@oculusvault/sdk";
+import { getInitData, isInsideTelegram } from "@oculusvault/sdk";
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8787";
 
-/** Current session JWT, set after authenticate(); used by RemoteVaultStorage. */
+/**
+ * Demo mode = running in a plain browser, where no Telegram identity exists.
+ * The demo is a self-contained sandbox: wallet keys live only in THIS browser
+ * (localStorage), testnet only, and no backend session is needed at all.
+ * The real wallet — shared vault, mainnet — requires the Telegram Mini App,
+ * because the whole security model hangs off the verified Telegram identity.
+ */
+export function isDemoMode(): boolean {
+  return !isInsideTelegram();
+}
+
+/** Current session JWT, set after a REAL authenticate(); used by
+ * RemoteVaultStorage. Always null in demo mode. */
 let currentToken: string | null = null;
 export function getToken(): string | null {
   return currentToken;
@@ -12,22 +24,28 @@ export interface AuthResult {
   userId: string;
   user: { id: number; username?: string; first_name?: string };
   token: string;
-  dev?: boolean;
+  demo?: boolean;
 }
 
 /**
- * Authenticate against the backend. Sends the raw Telegram initData for
- * server-side HMAC verification; in a plain browser (no Telegram) it falls
- * back to the dev endpoint if the server allows it.
+ * Authenticate. Inside Telegram: send the raw initData to the backend for
+ * server-side HMAC verification and get a session. In a browser: no server
+ * call — return a local sandbox identity for the demo.
  */
 export async function authenticate(): Promise<AuthResult> {
-  const initData = getInitData();
+  if (isDemoMode()) {
+    return {
+      userId: "demo-" + browserId(),
+      user: { id: 0, username: "demo" },
+      token: "",
+      demo: true,
+    };
+  }
+
   const res = await fetch(`${API_BASE}/api/auth/verify`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      initData ? { initData } : { devUserId: "demo-" + browserId() },
-    ),
+    body: JSON.stringify({ initData: getInitData() }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -42,7 +60,7 @@ export async function authenticate(): Promise<AuthResult> {
   return result;
 }
 
-/** Stable-ish per-browser id for dev mode outside Telegram. */
+/** Stable per-browser id so the demo wallet survives page reloads. */
 function browserId(): string {
   const k = "oculusvault:devBrowserId";
   let v = localStorage.getItem(k);

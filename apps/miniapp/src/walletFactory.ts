@@ -2,6 +2,7 @@ import {
   OculusVault,
   LocalEncryptedKeyProvider,
   RemoteVaultStorage,
+  isInsideTelegram,
   type HederaNetwork,
   type Storage,
 } from "@oculusvault/sdk";
@@ -18,8 +19,15 @@ export const DEFAULT_NETWORK = (import.meta.env.VITE_HEDERA_NETWORK ??
 const USE_SHARED_VAULT =
   (import.meta.env.VITE_USE_SHARED_VAULT ?? "true") !== "false";
 
+/**
+ * Storage policy is identity policy:
+ *  - Inside Telegram (verified identity) → the shared vault (or CloudStorage).
+ *  - In a browser (demo mode, no identity) → THIS browser's localStorage only.
+ *    Demo wallets must never land in the production vault: the server keys
+ *    records by verified Telegram ids, which a browser doesn't have.
+ */
 function makeStorage(): Storage {
-  if (USE_SHARED_VAULT && API_BASE) {
+  if (isInsideTelegram() && USE_SHARED_VAULT && API_BASE) {
     return new RemoteVaultStorage({ apiBase: API_BASE, getToken });
   }
   return pickStorage();

@@ -43,6 +43,16 @@ The stored record contains only: version, public EVM address, KDF params
 (salt + costs), nonce, ciphertext, secret source, timestamp. It is asserted in
 tests that the plaintext key never appears in the record.
 
+## Demo mode vs real mode
+
+In a plain browser there is no Telegram identity, so the app becomes a
+**demo**: a testnet-only sandbox whose keys live solely in that browser's
+localStorage — clearly labeled, mainnet disabled, and never touching the
+shared vault (which is keyed by verified Telegram ids). The real wallet exists
+only inside the Telegram Mini App. This is deliberate: an unverified browser
+visitor must not be able to create something that looks like a production
+wallet.
+
 ## Telegram authentication
 
 `initData` is verified **server-side** per Telegram's spec:

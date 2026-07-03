@@ -62,12 +62,18 @@ npm run dev:server         # http://localhost:8787
 npm run dev:miniapp        # http://localhost:5173
 ```
 
-### Run it without Telegram (browser dev)
+### Browser = demo mode (by design)
 
-Set `ALLOW_DEV_AUTH=true` in `.env` (already on in the example). The Mini App
-then authenticates against a guarded dev endpoint with a fake user, so you can
-develop the whole flow in a normal browser. **Never enable this in production —
-it bypasses initData verification.**
+Opened in a plain browser there is no Telegram identity, so the app runs as a
+**self-contained testnet sandbox**: keys live only in that browser
+(localStorage), mainnet is unavailable, a persistent DEMO badge explains the
+situation, and **no backend is needed at all**. The real wallet — shared vault,
+mainnet — exists only inside the Telegram Mini App, because the security model
+hangs off the server-verified Telegram identity.
+
+`ALLOW_DEV_AUTH=true` remains available for **local backend development only**
+(it lets you exercise the vault API without a bot). Keep it `false` in
+production — it accepts unverified identities.
 
 ### Run it as a real Telegram Mini App
 
