@@ -283,6 +283,84 @@ body {
   font-size: 22px;
   font-weight: 700;
 }
+
+/* ── Network switcher ─────────────────────────────────────────────── */
+.netswitch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+.netswitch .seg {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.netswitch .seg.active {
+  background: rgba(124, 92, 255, 0.25);
+  color: var(--link);
+}
+.netswitch .seg.active.gold-seg {
+  background: rgba(232, 181, 99, 0.22);
+  color: #e8b563;
+}
+
+.gold {
+  color: #e8b563;
+}
+.btn.gold {
+  background: linear-gradient(120deg, #e8b563, #d99a3d);
+  color: #1a1206;
+  border-color: transparent;
+}
+
+.mainnet-strip {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #e8b563;
+  background: rgba(232, 181, 99, 0.1);
+  border: 1px solid rgba(232, 181, 99, 0.3);
+  border-radius: 10px;
+  padding: 7px 10px;
+}
+.app.on-mainnet .balance {
+  color: #e8b563;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal {
+  max-width: 420px;
+  width: 100%;
+}
+.checklist {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

@@ -53,10 +53,11 @@ export interface OnIncomingOptions {
 }
 
 export class OculusVault {
-  readonly network: HederaNetwork;
+  private _network: HederaNetwork;
   private readonly keyProvider: KeyProvider;
   private readonly namespace: string;
-  private readonly mirror: MirrorClient;
+  private readonly fetchImpl?: typeof fetch;
+  private mirror: MirrorClient;
 
   private privateKeyHex: string | null = null;
   private evmAddress: string | null = null;
@@ -64,13 +65,32 @@ export class OculusVault {
   private userId: string | null = null;
 
   constructor(opts: OculusVaultOptions) {
-    this.network = opts.network;
+    this._network = opts.network;
     this.keyProvider = opts.keyProvider;
     this.namespace = opts.storageNamespace ?? "oculusvault:wallet:v1";
+    this.fetchImpl = opts.fetchImpl;
     this.mirror = new MirrorClient(
       getNetworkConfig(opts.network),
       opts.fetchImpl,
     );
+  }
+
+  get network(): HederaNetwork {
+    return this._network;
+  }
+
+  /**
+   * Switch the wallet to another Hedera network. The SAME key (and therefore
+   * the same 0x address) is valid on every network — only the on-ledger
+   * account id differs, so this is instant: no re-unlock needed. The account
+   * id is reset and re-resolved lazily (call refreshAccountId() or any read).
+   * Re-subscribe any onIncoming() watchers after switching.
+   */
+  switchNetwork(network: HederaNetwork): void {
+    if (network === this._network) return;
+    this._network = network;
+    this.mirror = new MirrorClient(getNetworkConfig(network), this.fetchImpl);
+    this.accountId = null; // per-network; re-resolved on next read
   }
 
   private storageKey(userId: string | number): string {

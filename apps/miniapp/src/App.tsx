@@ -8,16 +8,30 @@ import {
   scanQr,
   haptic,
   type Balance,
+  type HederaNetwork,
   type HistoryItem,
   type PayIntent,
   type WalletIdentity,
 } from "@oculusvault/sdk";
 import { authenticate, type AuthResult } from "./api.js";
-import { createWallet, NETWORK_NAME } from "./walletFactory.js";
+import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
 import { Landing } from "./Landing.js";
 
 type Phase = "loading" | "error" | "locked" | "ready";
+
+const NET_KEY = "oculusvault:network";
+const MAINNET_ACK_KEY = "oculusvault:mainnetAck";
+
+function loadSavedNetwork(): HederaNetwork {
+  try {
+    const v = localStorage.getItem(NET_KEY);
+    if (v === "mainnet" || v === "testnet") return v;
+  } catch {
+    /* storage unavailable */
+  }
+  return DEFAULT_NETWORK;
+}
 
 /** "5.00000000" → "5", "3.99875220" → "3.9987522" — friendlier amounts. */
 function formatHbar(hbar: string): string {
@@ -55,13 +69,15 @@ function WalletApp() {
   const [auth, setAuth] = useState<AuthResult | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [identity, setIdentity] = useState<WalletIdentity | null>(null);
+  const [network, setNetwork] = useState<HederaNetwork>(loadSavedNetwork);
+  const [askMainnet, setAskMainnet] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         const a = await authenticate();
         setAuth(a);
-        walletRef.current = createWallet();
+        walletRef.current = createWallet(loadSavedNetwork());
         const exists = await walletRef.current.hasWallet(a.userId);
         setIsNew(!exists);
         setPhase("locked");
@@ -86,6 +102,40 @@ function WalletApp() {
     [auth],
   );
 
+  /** Same key = same address on every network, so switching is instant. */
+  const doSwitch = useCallback(
+    (n: HederaNetwork) => {
+      walletRef.current?.switchNetwork(n);
+      try {
+        localStorage.setItem(NET_KEY, n);
+      } catch {
+        /* fine */
+      }
+      haptic("tap");
+      setIdentity((id) => (id ? { ...id, hederaAccountId: null } : id));
+      setNetwork(n);
+    },
+    [],
+  );
+
+  const requestSwitch = useCallback(
+    (n: HederaNetwork) => {
+      if (n === network) return;
+      let acked = false;
+      try {
+        acked = localStorage.getItem(MAINNET_ACK_KEY) === "yes";
+      } catch {
+        /* fine */
+      }
+      if (n === "mainnet" && !acked) {
+        setAskMainnet(true);
+        return;
+      }
+      doSwitch(n);
+    },
+    [network, doSwitch],
+  );
+
   if (phase === "loading") return <Centered>Connecting…</Centered>;
   if (phase === "error")
     return (
@@ -103,17 +153,69 @@ function WalletApp() {
     );
 
   return (
-    <Dashboard
-      wallet={walletRef.current!}
-      identity={identity!}
-      setIdentity={setIdentity}
-      freshWallet={isNew}
-    />
+    <>
+      {askMainnet && (
+        <MainnetGate
+          onConfirm={() => {
+            try {
+              localStorage.setItem(MAINNET_ACK_KEY, "yes");
+            } catch {
+              /* fine */
+            }
+            setAskMainnet(false);
+            doSwitch("mainnet");
+          }}
+          onCancel={() => setAskMainnet(false)}
+        />
+      )}
+      <Dashboard
+        key={network} /* remount per network: fresh balance/history/pollers */
+        wallet={walletRef.current!}
+        identity={identity!}
+        setIdentity={setIdentity}
+        freshWallet={isNew}
+        network={network}
+        onSwitchNetwork={requestSwitch}
+      />
+    </>
   );
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <div className="app centered">{children}</div>;
+}
+
+/** One-time, plain-words gate before the first mainnet switch. */
+function MainnetGate({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="card modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Switch to mainnet?</h2>
+        <p className="muted small">
+          Mainnet uses <strong className="gold">real HBAR with real value</strong>.
+          Your address stays the same — but transfers are final and this beta
+          hasn’t had a third-party audit yet.
+        </p>
+        <ul className="muted small checklist">
+          <li>Keep only small amounts here for now</li>
+          <li>Back up your key first (Self-custody → Export)</li>
+          <li>Your testnet balance stays safe on testnet</li>
+        </ul>
+        <button className="btn gold" onClick={onConfirm}>
+          I understand — switch to mainnet
+        </button>
+        <button className="btn ghost" onClick={onCancel}>
+          Stay on testnet
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function UnlockScreen({
@@ -147,7 +249,7 @@ function UnlockScreen({
 
   return (
     <div className="app">
-      <Header />
+      <Header network={loadSavedNetwork()} />
       <div className="card">
         <h2>{isNew ? "Create your wallet" : "Unlock your wallet"}</h2>
         <p className="muted small">
@@ -194,11 +296,15 @@ function Dashboard({
   identity,
   setIdentity,
   freshWallet,
+  network,
+  onSwitchNetwork,
 }: {
   wallet: OculusVault;
   identity: WalletIdentity;
-  setIdentity: (id: WalletIdentity) => void;
+  setIdentity: (id: WalletIdentity | null) => void;
   freshWallet: boolean;
+  network: HederaNetwork;
+  onSwitchNetwork: (n: HederaNetwork) => void;
 }) {
   // A pay deep-link (NFC tag / QR / t.me link) pre-fills the Send tab.
   const [intent] = useState<PayIntent | null>(() =>
@@ -244,9 +350,15 @@ function Dashboard({
   const usd = balance ? formatUsd(balance.usdEstimate) : null;
 
   return (
-    <div className="app">
-      <Header />
+    <div className={network === "mainnet" ? "app on-mainnet" : "app"}>
+      <Header network={network} onSwitch={onSwitchNetwork} />
       {toast && <div className="toast">🎉 {toast}</div>}
+
+      {network === "mainnet" && (
+        <div className="mainnet-strip">
+          Real HBAR · beta, unaudited — keep small amounts
+        </div>
+      )}
 
       {freshWallet && !backupDone && (
         <div className="banner">
@@ -275,7 +387,7 @@ function Dashboard({
       )}
 
       <div className="card balance-card">
-        <span className="muted small">Balance</span>
+        <span className="muted small">Balance · {network}</span>
         <div className="balance">{balance ? formatHbar(balance.hbar) : "…"} ℏ</div>
         {usd && <span className="muted small usd">{usd}</span>}
         <a className="link small" href={wallet.accountUrl()} target="_blank" rel="noreferrer">
@@ -293,13 +405,14 @@ function Dashboard({
       </div>
 
       {tab === "receive" ? (
-        <ReceiveTab identity={identity} />
+        <ReceiveTab identity={identity} network={network} />
       ) : (
         <SendTab
           wallet={wallet}
           onSent={refresh}
           prefill={intent}
           balanceHbar={balance ? balance.hbar : null}
+          network={network}
         />
       )}
 
@@ -310,7 +423,13 @@ function Dashboard({
   );
 }
 
-function ReceiveTab({ identity }: { identity: WalletIdentity }) {
+function ReceiveTab({
+  identity,
+  network,
+}: {
+  identity: WalletIdentity;
+  network: HederaNetwork;
+}) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard.writeText(identity.evmAddress).then(() => {
@@ -330,8 +449,8 @@ function ReceiveTab({ identity }: { identity: WalletIdentity }) {
         {copied ? "Copied!" : "Copy address"}
       </button>
       <p className="muted xsmall">
-        Send {NETWORK_NAME} HBAR here. The first deposit auto-creates your Hedera
-        account.
+        Send {network} HBAR here. The first deposit auto-creates your Hedera
+        account. Same address on every network.
       </p>
     </div>
   );
@@ -342,11 +461,13 @@ function SendTab({
   onSent,
   prefill,
   balanceHbar,
+  network,
 }: {
   wallet: OculusVault;
   onSent: () => void;
   prefill: PayIntent | null;
   balanceHbar: string | null;
+  network: HederaNetwork;
 }) {
   const [to, setTo] = useState(prefill?.to ?? "");
   const [amount, setAmount] = useState(prefill?.amountHbar ?? "");
@@ -425,7 +546,10 @@ function SendTab({
         </div>
         <div className="confirm-row">
           <span className="muted small">Network</span>
-          <span>{NETWORK_NAME}</span>
+          <span className={network === "mainnet" ? "gold" : undefined}>
+            {network}
+            {network === "mainnet" ? " — real HBAR" : ""}
+          </span>
         </div>
         <p className="muted xsmall">
           Transfers are final. A small network fee (~0.001 ℏ) applies.
@@ -540,11 +664,38 @@ function ExportRow({
   );
 }
 
-function Header() {
+function Header({
+  network,
+  onSwitch,
+}: {
+  network: HederaNetwork;
+  onSwitch?: (n: HederaNetwork) => void;
+}) {
   return (
     <header className="header">
       <span className="logo">ℏ OculusVault</span>
-      <span className={`net ${NETWORK_NAME}`}>{NETWORK_NAME}</span>
+      {onSwitch ? (
+        <div className="netswitch" role="tablist" aria-label="Network">
+          <button
+            role="tab"
+            aria-selected={network === "testnet"}
+            className={network === "testnet" ? "seg active" : "seg"}
+            onClick={() => onSwitch("testnet")}
+          >
+            Testnet
+          </button>
+          <button
+            role="tab"
+            aria-selected={network === "mainnet"}
+            className={network === "mainnet" ? "seg active gold-seg" : "seg"}
+            onClick={() => onSwitch("mainnet")}
+          >
+            Mainnet
+          </button>
+        </div>
+      ) : (
+        <span className={`net ${network}`}>{network}</span>
+      )}
     </header>
   );
 }
