@@ -601,6 +601,12 @@
 .lp-beta-inner strong {
   color: var(--ink);
 }
+.lp-beta-inner a {
+  color: var(--green);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 /* ── footer ─────────────────────────────────────────────────────────── */
 .lp-footer {

@@ -385,6 +385,43 @@ body::after {
   color: var(--red);
 }
 
+/* ── faucet voucher: a clip-out coupon for free testnet ℏ ───────────── */
+.voucher {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 13px;
+  border: 1.5px dashed var(--green);
+  border-radius: 6px;
+  background: rgba(29, 92, 69, 0.05);
+  text-decoration: none;
+  color: var(--ink);
+  text-align: left;
+  transition: background 0.2s;
+}
+.voucher:hover {
+  background: rgba(29, 92, 69, 0.1);
+}
+.voucher-tag {
+  flex: 0 0 auto;
+  font-family: "Zodiak", serif;
+  font-weight: 900;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--green);
+  border: 2px solid var(--green);
+  border-radius: 6px;
+  padding: 6px 9px;
+  transform: rotate(-3deg);
+}
+.voucher-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
 /* ── history: the ledger ────────────────────────────────────────────── */
 .row {
   display: flex;

@@ -468,6 +468,20 @@ function ReceiveTab({
         Send {network} HBAR here. The first deposit auto-creates your Hedera
         account. Same address on every network.
       </p>
+      {network === "testnet" && (
+        <a
+          className="voucher"
+          href="https://faucet.hedera.com"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <span className="voucher-tag">Free ℏ</span>
+          <span className="voucher-text">
+            No testnet HBAR yet? Copy your address above and claim up to 100 ℏ
+            a day at the official Hedera faucet ↗
+          </span>
+        </a>
+      )}
     </div>
   );
 }

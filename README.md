@@ -92,7 +92,10 @@ production — it accepts unverified identities.
    address + QR. The Hedera account id is "not created yet" — that's expected.
 2. Fund a testnet operator: grab an account + HBAR at
    [portal.hedera.com](https://portal.hedera.com/), put `OPERATOR_ID` /
-   `OPERATOR_KEY` (ECDSA) in `.env`.
+   `OPERATOR_KEY` (ECDSA) in `.env`. (No operator? The official
+   [Hedera faucet](https://faucet.hedera.com) sends free testnet ℏ — up to
+   100 ℏ/day — straight to any 0x address, including the one the wallet
+   shows you. The Receive tab links to it.)
 3. Simulate the machine paying the new wallet:
 
    ```bash

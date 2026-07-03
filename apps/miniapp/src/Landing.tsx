@@ -126,7 +126,11 @@ export function Landing() {
             built as an ecosystem contribution by a Hedera Developer Ambassador.
             It has <strong>not had a third-party audit</strong> — don’t trust it
             with more than small amounts. Lost secret means lost wallet, by
-            design.
+            design. Testnet ℏ is free — claim yours at the{" "}
+            <a href="https://faucet.hedera.com" target="_blank" rel="noreferrer">
+              official Hedera faucet
+            </a>{" "}
+            and try everything risk-free.
           </p>
           <div className="lp-cta lp-cta-center">
             <TelegramCta size="lg" />
