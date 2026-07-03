@@ -34,3 +34,6 @@ jobs:
 
       - name: Build Mini App
         run: npm run build --workspace @oculusvault/miniapp
+
+      - name: Build Chrome extension
+        run: npm run build --workspace @oculusvault/extension

@@ -12,6 +12,7 @@
  * check). It is used ONLY to namespace storage — never as key material.
  */
 import type { UserSecret } from "./crypto/encryption.js";
+import { fromPrivateKey } from "./crypto/keys.js";
 import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
 import { MirrorClient } from "./hedera/mirror.js";
 import { sendHbar } from "./hedera/transfer.js";
@@ -127,6 +128,19 @@ export class OculusVault {
     this.userId = String(args.userId);
 
     // Resolve the on-ledger account id (null until first inbound HBAR).
+    await this.refreshAccountId();
+    return this.getIdentity();
+  }
+
+  /**
+   * Unlock directly with a raw private key (e.g. a key restored from a
+   * short-lived session cache, or an imported key). Does NOT touch storage.
+   * The identity is derived from the key itself.
+   */
+  async unlockWithKey(privateKeyHex: string): Promise<WalletIdentity> {
+    const key = fromPrivateKey(privateKeyHex);
+    this.privateKeyHex = key.privateKeyHex;
+    this.evmAddress = key.evmAddress;
     await this.refreshAccountId();
     return this.getIdentity();
   }

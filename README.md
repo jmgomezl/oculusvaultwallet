@@ -46,10 +46,16 @@ threat model.
 packages/sdk       @oculusvault/sdk — the reusable library (the core)
 apps/server        thin backend: verifies initData, shared vault, Mirror proxy
 apps/miniapp       the Mini App + the public landing page (React + Vite)
+apps/extension     Chrome extension (MV3) — same vault, on desktop
 scripts/payin.mjs  simulates the "machine" paying a wallet (auto-create demo)
 scripts/e2e.mjs    headless on-chain smoke test of the whole loop
 scripts/deploy.sh  build locally → ship to the server (see DEPLOY.md)
 ```
+
+**Desktop too:** the [Chrome extension](./apps/extension/README.md)
+authenticates with the official Telegram Login Widget and opens the **same
+vault** as the Mini App — Telegram remains the single source of truth; the
+extension is just another client of the ciphertext-only vault.
 
 ---
 

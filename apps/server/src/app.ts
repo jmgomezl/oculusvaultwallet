@@ -21,7 +21,12 @@ import express, {
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import { MirrorClient, getNetworkConfig } from "@oculusvault/sdk";
-import { verifyTelegramInitData, InitDataError } from "@oculusvault/sdk/server";
+import {
+  verifyTelegramInitData,
+  verifyTelegramLogin,
+  InitDataError,
+  type TelegramLoginPayload,
+} from "@oculusvault/sdk/server";
 import { config } from "./config.js";
 import { VaultStore } from "./vaultStore.js";
 
@@ -157,6 +162,40 @@ export function createApp(deps: AppDeps = {}): Express {
       console.error("verify error", err);
       return res.status(500).json({ error: "internal" });
     }
+  });
+
+  /**
+   * Telegram Login Widget verification — how a browser/extension client
+   * proves the SAME Telegram identity outside Telegram. Issues the same
+   * session JWT as /api/auth/verify, so it opens the same vault.
+   */
+  app.post("/api/auth/telegram-login", authLimiter, (req: Request, res: Response) => {
+    const data: unknown = req.body?.data;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return res.status(400).json({ error: "missing_login_payload" });
+    }
+    let lastErr: unknown;
+    for (const token of Object.values(config.botTokens)) {
+      try {
+        const verified = verifyTelegramLogin(data as TelegramLoginPayload, token, {
+          maxAgeSeconds: config.initDataMaxAgeSeconds,
+          now,
+        });
+        const uid = String(verified.user.id);
+        return res.json({
+          userId: uid,
+          user: verified.user,
+          token: issueSession({ uid, username: verified.user.username }),
+        });
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (lastErr instanceof InitDataError) {
+      return res.status(401).json({ error: lastErr.code, message: lastErr.message });
+    }
+    console.error("telegram-login error", lastErr);
+    return res.status(500).json({ error: "internal" });
   });
 
   app.get("/api/me", requireSession, (req: Authed, res: Response) => {

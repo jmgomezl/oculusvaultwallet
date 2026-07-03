@@ -1,6 +1,6 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -120,6 +120,53 @@ test("rejects an upload that is not an encrypted record", async () => {
     body: JSON.stringify({ record: "my-plaintext-private-key" }),
   });
   assert.equal(res.status, 422);
+});
+
+test("Login Widget auth (extension) opens the SAME vault as Mini App auth", async () => {
+  // Store a record via Mini App-style initData auth…
+  const miniAppToken = await login(4242, OCULUS_TOKEN);
+  await fetch(`${base}/api/vault`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", authorization: `Bearer ${miniAppToken}` },
+    body: JSON.stringify({ record: FAKE_RECORD }),
+  });
+
+  // …then log in as the SAME user via the Telegram Login Widget scheme.
+  const fields: Record<string, string | number> = {
+    id: 4242,
+    first_name: "Ada",
+    username: "u4242",
+    auth_date: Math.floor(NOW / 1000) - 10,
+  };
+  const dcs = Object.entries(fields)
+    .map(([k, v]) => `${k}=${v}`)
+    .sort()
+    .join("\n");
+  const secret = createHash("sha256").update(OCULUS_TOKEN).digest();
+  const hash = createHmac("sha256", secret).update(dcs).digest("hex");
+
+  const loginRes = await fetch(`${base}/api/auth/telegram-login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: { ...fields, hash } }),
+  });
+  assert.equal(loginRes.status, 200);
+  const { token: widgetToken, userId } = await loginRes.json();
+  assert.equal(userId, "4242");
+
+  const get = await fetch(`${base}/api/vault`, {
+    headers: { authorization: `Bearer ${widgetToken}` },
+  });
+  assert.equal(get.status, 200);
+  assert.equal((await get.json()).record, FAKE_RECORD);
+
+  // Forged widget payloads are rejected.
+  const forged = await fetch(`${base}/api/auth/telegram-login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: { ...fields, hash: "deadbeef".repeat(8) } }),
+  });
+  assert.equal(forged.status, 401);
 });
 
 test("delete removes the record", async () => {

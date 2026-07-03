@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connect Telegram — OculusVault</title>
+  <meta name="robots" content="noindex" />
+  <link href="https://api.fontshare.com/v2/css?f[]=zodiak@400,700,900&f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --paper: #f5f1e6; --paper-2: #ede7d6; --ink: #1c1a14; --ink-2: #57523f;
+      --rule: rgba(28, 26, 20, 0.28); --green: #1d5c45; --red: #b3391f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: var(--paper); color: var(--ink);
+      font-family: "Satoshi", system-ui, sans-serif; padding: 24px;
+    }
+    .cert {
+      max-width: 460px; width: 100%; text-align: center;
+      border: 1.5px solid var(--ink); outline: 1px solid var(--rule);
+      outline-offset: 5px; border-radius: 4px; background: var(--paper-2);
+      padding: 40px 30px 34px;
+    }
+    h1 { font-family: "Zodiak", serif; font-weight: 900; font-size: 28px; margin: 0 0 10px; }
+    p { color: var(--ink-2); font-size: 14.5px; line-height: 1.6; margin: 0 0 22px; }
+    .widget { min-height: 48px; display: grid; place-items: center; }
+    .state { margin-top: 18px; font-size: 14px; font-weight: 700; display: none; }
+    .ok { color: var(--green); }
+    .err { color: var(--red); }
+    .fine {
+      margin-top: 22px; padding-top: 14px; border-top: 1px dashed var(--rule);
+      font-family: "JetBrains Mono", monospace; font-size: 10.5px;
+      letter-spacing: 0.04em; color: var(--ink-2);
+    }
+  </style>
+</head>
+<body>
+  <div class="cert">
+    <h1>Connect Telegram</h1>
+    <p>
+      Sign in with the same Telegram account you use for OculusVault. Your
+      wallet stays exactly where it is — this only proves to the extension
+      that you are you.
+    </p>
+    <div class="widget" id="widget"></div>
+    <div class="state ok" id="ok">✓ Connected — you can close this tab and return to the extension.</div>
+    <div class="state err" id="err"></div>
+    <div class="fine">
+      Only continue if you just clicked “Connect Telegram” in the OculusVault
+      extension. Telegram never shares your password; OculusVault never sees
+      your keys.
+    </div>
+  </div>
+
+  <script>
+    var API = "https://api.oculusvault.com";
+    var extId = new URLSearchParams(location.search).get("ext");
+
+    function fail(msg) {
+      var el = document.getElementById("err");
+      el.textContent = "✗ " + msg;
+      el.style.display = "block";
+    }
+
+    // Called by the Telegram widget after the user authorises.
+    window.onTelegramAuth = function (user) {
+      fetch(API + "/api/auth/telegram-login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data: user }),
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok) return fail("Verification failed: " + (res.j.error || "unknown"));
+          if (!extId || !window.chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+            return fail("Couldn't reach the extension. Reopen this page from the extension's Connect button.");
+          }
+          chrome.runtime.sendMessage(
+            extId,
+            { type: "oculusvault-auth", token: res.j.token, userId: res.j.userId, user: res.j.user },
+            function () {
+              if (chrome.runtime.lastError) {
+                fail("Extension didn't answer: " + chrome.runtime.lastError.message);
+              } else {
+                document.getElementById("ok").style.display = "block";
+                document.getElementById("widget").style.display = "none";
+              }
+            }
+          );
+        })
+        .catch(function (e) { fail(String(e)); });
+    };
+
+    // Inject the official Telegram Login Widget for @oculusvaultbot.
+    var s = document.createElement("script");
+    s.async = true;
+    s.src = "https://telegram.org/js/telegram-widget.js?22";
+    s.setAttribute("data-telegram-login", "oculusvaultbot");
+    s.setAttribute("data-size", "large");
+    s.setAttribute("data-radius", "8");
+    s.setAttribute("data-onauth", "onTelegramAuth(user)");
+    document.getElementById("widget").appendChild(s);
+  </script>
+</body>
+</html>

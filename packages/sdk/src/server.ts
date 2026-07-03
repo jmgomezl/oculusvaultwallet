@@ -5,6 +5,12 @@
  * your backend; never from browser code.
  */
 export {
+  verifyTelegramLogin,
+  type TelegramLoginPayload,
+  type VerifiedLogin,
+  type VerifyLoginOptions,
+} from "./auth/telegramLogin.js";
+export {
   verifyTelegramInitData,
   InitDataError,
   type TelegramUser,

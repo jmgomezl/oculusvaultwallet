@@ -1,0 +1,17 @@
+/* Popup-only adjustments on top of the shared Engraved Note system. */
+.app {
+  padding-bottom: 6px;
+}
+.app.unlock {
+  min-height: 540px;
+}
+.linklike {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--red);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
