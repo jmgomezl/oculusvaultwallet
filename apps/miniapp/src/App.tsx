@@ -324,7 +324,7 @@ function Dashboard({
   const [balance, setBalance] = useState<Balance | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [toast, setToast] = useState<string>("");
-  const [revealedKey, setRevealedKey] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
   const [backupDone, setBackupDone] = useState(false);
   const [copied, setCopied] = useState<string>("");
 
@@ -373,7 +373,6 @@ function Dashboard({
     });
   }, []);
 
-  const revealKey = async () => setRevealedKey(await wallet.exportKey());
   const usd = balance ? formatUsd(balance.usdEstimate) : null;
 
   if (view === "receive") {
@@ -488,8 +487,8 @@ function Dashboard({
             <button
               className="btn sm"
               onClick={() => {
-                revealKey();
                 setBackupDone(true);
+                setExportOpen(true);
               }}
             >
               Export now
@@ -548,7 +547,11 @@ function Dashboard({
       )}
 
       <HistoryList items={history} />
-      <ExportRow keyText={revealedKey} onReveal={revealKey} onHide={() => setRevealedKey("")} />
+      <ExportRow
+        open={exportOpen}
+        setOpen={setExportOpen}
+        reveal={(pw) => wallet.exportKeyWithSecret({ source: "password", value: pw })}
+      />
       <Footer />
     </div>
   );
@@ -760,32 +763,100 @@ function HistoryList({ items }: { items: HistoryItem[] }) {
   );
 }
 
+/**
+ * Self-custody export, password-gated. Revealing the raw key ALWAYS
+ * re-verifies the password (re-decrypts the stored ciphertext) — the key is
+ * never shown just because the session is unlocked.
+ */
 function ExportRow({
-  keyText,
-  onReveal,
-  onHide,
+  open,
+  setOpen,
+  reveal,
 }: {
-  keyText: string;
-  onReveal: () => void;
-  onHide: () => void;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  reveal: (password: string) => Promise<string>;
 }) {
+  const [pw, setPw] = useState("");
+  const [keyText, setKeyText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const reset = () => {
+    setOpen(false);
+    setPw("");
+    setKeyText("");
+    setErr("");
+  };
+
+  const submit = async () => {
+    setErr("");
+    if (!pw) return;
+    setBusy(true);
+    try {
+      const k = await reveal(pw);
+      haptic("success");
+      setKeyText(k);
+      setPw("");
+    } catch (e) {
+      haptic("error");
+      setErr(
+        /decrypt|match|wrong/i.test((e as Error).message)
+          ? "Wrong password."
+          : (e as Error).message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="card">
       <h3>Self-custody</h3>
-      {!keyText ? (
-        <button className="btn" onClick={onReveal}>
+      {!open ? (
+        <button className="btn" onClick={() => setOpen(true)}>
           Export private key
         </button>
+      ) : !keyText ? (
+        <>
+          <p className="muted small">
+            Confirm your password to reveal your private key.
+          </p>
+          <input
+            className="input"
+            type="password"
+            placeholder="Password"
+            value={pw}
+            autoFocus
+            onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+          {err && <p className="error">{err}</p>}
+          <button className="btn primary" disabled={busy || !pw} onClick={submit}>
+            {busy ? "Verifying…" : "Reveal key"}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={reset}>
+            Cancel
+          </button>
+        </>
       ) : (
         <>
           <p className="error xsmall">
             ⚠️ Anyone with this key controls the wallet. Never share it.
           </p>
           <code className="addr break">{keyText}</code>
-          <button className="btn" onClick={() => navigator.clipboard.writeText(keyText)}>
-            Copy key
+          <button
+            className="btn"
+            onClick={() => {
+              navigator.clipboard.writeText(keyText);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            {copied ? "Copied ✓" : "Copy key"}
           </button>
-          <button className="btn ghost" onClick={onHide}>
+          <button className="btn ghost" onClick={reset}>
             Hide
           </button>
         </>

@@ -58,4 +58,18 @@ test("switchNetwork keeps the key/address, resets the account id", async () => {
 
   // Exporting still works after switches (key never dropped).
   assert.match(await wallet.exportKey(), /^[0-9a-f]{64}$/);
+
+  // Password-gated export: correct password re-decrypts to the same key…
+  const inMemory = await wallet.exportKey();
+  const reVerified = await wallet.exportKeyWithSecret({
+    source: "password",
+    value: "hunter2hunter2",
+  });
+  assert.equal(reVerified, inMemory);
+
+  // …a wrong password is rejected even though the wallet is unlocked.
+  await assert.rejects(
+    wallet.exportKeyWithSecret({ source: "password", value: "not-the-password" }),
+    /decrypt|match|wrong/i,
+  );
 });

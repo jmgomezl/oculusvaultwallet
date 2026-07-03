@@ -82,7 +82,7 @@ function App() {
       // Cached unlocked key from the last 15 minutes? Skip the password.
       const cached = await getCachedKey();
       if (cached) {
-        const id = await wallet.unlockWithKey(cached.privateKeyHex);
+        const id = await wallet.unlockWithKey(cached.privateKeyHex, s.userId);
         setIdentity(id);
         setPhase("ready");
         return;
@@ -326,7 +326,6 @@ function Dashboard({
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [toast, setToast] = useState("");
   const [tab, setTab] = useState<"receive" | "send">("receive");
-  const [revealedKey, setRevealedKey] = useState("");
 
   const refresh = useCallback(async () => {
     const [b, h, accountId] = await Promise.all([
@@ -455,26 +454,66 @@ function Dashboard({
         ))}
       </div>
 
-      <div className="card">
-        <h3>Self-custody</h3>
-        {!revealedKey ? (
-          <button className="btn" onClick={async () => setRevealedKey(await wallet.exportKey())}>
-            Export private key
-          </button>
-        ) : (
-          <>
-            <p className="error xsmall">⚠️ Anyone with this key controls the wallet. Never share it.</p>
-            <code className="addr break">{revealedKey}</code>
-            <button className="btn" onClick={() => navigator.clipboard.writeText(revealedKey)}>Copy key</button>
-            <button className="btn ghost" onClick={() => setRevealedKey("")}>Hide</button>
-          </>
-        )}
-      </div>
+      <ExportCard reveal={(pw) => wallet.exportKeyWithSecret({ source: "password", value: pw })} />
 
       <footer className="footer muted xsmall">
         Anchored to Telegram · non-custodial ·{" "}
         <button className="linklike" onClick={onDisconnect}>disconnect</button>
       </footer>
+    </div>
+  );
+}
+
+/** Password-gated key export for the extension (re-verifies before reveal). */
+function ExportCard({ reveal }: { reveal: (password: string) => Promise<string> }) {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState("");
+  const [keyText, setKeyText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const reset = () => { setOpen(false); setPw(""); setKeyText(""); setErr(""); };
+  const submit = async () => {
+    setErr("");
+    if (!pw) return;
+    setBusy(true);
+    try {
+      setKeyText(await reveal(pw));
+      setPw("");
+    } catch (e) {
+      setErr(/decrypt|match|wrong/i.test((e as Error).message) ? "Wrong password." : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3>Self-custody</h3>
+      {!open ? (
+        <button className="btn" onClick={() => setOpen(true)}>Export private key</button>
+      ) : !keyText ? (
+        <>
+          <p className="muted small">Confirm your password to reveal your private key.</p>
+          <input
+            className="input" type="password" placeholder="Password" value={pw} autoFocus
+            onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+          />
+          {err && <p className="error">{err}</p>}
+          <button className="btn primary" disabled={busy || !pw} onClick={submit}>
+            {busy ? "Verifying…" : "Reveal key"}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={reset}>Cancel</button>
+        </>
+      ) : (
+        <>
+          <p className="error xsmall">⚠️ Anyone with this key controls the wallet. Never share it.</p>
+          <code className="addr break">{keyText}</code>
+          <button className="btn" onClick={() => navigator.clipboard.writeText(keyText)}>Copy key</button>
+          <button className="btn ghost" onClick={reset}>Hide</button>
+        </>
+      )}
     </div>
   );
 }

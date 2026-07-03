@@ -137,10 +137,14 @@ export class OculusVault {
    * short-lived session cache, or an imported key). Does NOT touch storage.
    * The identity is derived from the key itself.
    */
-  async unlockWithKey(privateKeyHex: string): Promise<WalletIdentity> {
+  async unlockWithKey(
+    privateKeyHex: string,
+    userId?: string | number,
+  ): Promise<WalletIdentity> {
     const key = fromPrivateKey(privateKeyHex);
     this.privateKeyHex = key.privateKeyHex;
     this.evmAddress = key.evmAddress;
+    if (userId != null) this.userId = String(userId);
     await this.refreshAccountId();
     return this.getIdentity();
   }
@@ -258,10 +262,36 @@ export class OculusVault {
     };
   }
 
-  /** Reveal the raw private key — proof of self-custody. */
+  /** Reveal the raw private key from memory — proof of self-custody. Trusts
+   * the current unlocked session; use exportKeyWithSecret() to require the
+   * password again before revealing. */
   async exportKey(): Promise<string> {
     this.requireUnlocked();
     return this.privateKeyHex!;
+  }
+
+  /**
+   * Reveal the raw private key ONLY after re-verifying the user's secret —
+   * it re-derives and decrypts the stored ciphertext, so a wrong password
+   * throws (Poly1305 auth failure) even though the key is already unlocked in
+   * memory. Use this to gate the "export key" action against shoulder-surfing
+   * or a walked-away session.
+   */
+  async exportKeyWithSecret(secret: UserSecret): Promise<string> {
+    this.requireUnlocked();
+    if (!this.userId) throw new Error("Wallet has no user context");
+    if (!this.keyProvider.exportPrivateKey) {
+      throw new Error("This key provider can’t re-verify the password");
+    }
+    const key = await this.keyProvider.exportPrivateKey({
+      storageKey: this.storageKey(this.userId),
+      secret,
+    });
+    // Defense-in-depth: the re-decrypted key must match the unlocked one.
+    if (key.toLowerCase() !== this.privateKeyHex!.toLowerCase()) {
+      throw new Error("Re-verified key does not match the unlocked wallet");
+    }
+    return key;
   }
 
   /** Wipe in-memory key material. */
