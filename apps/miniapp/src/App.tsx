@@ -421,7 +421,9 @@ function Dashboard({
               <span className="pending-stamp">Pending</span> Your account
               number is minted by the network with your <strong>first
               deposit</strong> — send any amount of {network} HBAR to the
-              address above and it appears here automatically.
+              address above and it appears here automatically. Account numbers
+              are per-network: your {network === "mainnet" ? "testnet" : "mainnet"}{" "}
+              Nº is separate and may already exist.
             </p>
           )}
         </div>
