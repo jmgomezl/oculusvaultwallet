@@ -601,7 +601,7 @@
 .lp-beta-inner strong {
   color: var(--ink);
 }
-.lp-beta-inner a {
+.lp-beta-inner a:not(.lp-btn) {
   color: var(--green);
   font-weight: 700;
   text-decoration: underline;

@@ -194,6 +194,96 @@ body::after {
   content: "Nº ";
 }
 
+/* identifier chips under the balance: 0x address + Hedera Nº */
+.id-row {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+.chip {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 5px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  cursor: pointer;
+}
+a.chip {
+  color: var(--red);
+}
+.chip-pending {
+  color: var(--ink-2);
+  border-style: dashed;
+  cursor: default;
+}
+
+/* sub-view header (Receive / Send) */
+.view-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0 10px;
+  border-bottom: 2px solid var(--ink);
+}
+.back-btn {
+  width: 38px;
+  height: 38px;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 rgba(28, 26, 20, 0.5);
+}
+.back-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.view-title {
+  margin: 0;
+  font-family: "Zodiak", serif;
+  font-weight: 900;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+.view-spacer {
+  flex: 1;
+}
+
+.acct-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.acct-row .addr {
+  flex: 1;
+  font-size: 15px;
+  letter-spacing: 0.05em;
+}
+
+.pending-stamp {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border: 2px solid var(--red);
+  border-radius: 5px;
+  color: var(--red);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  transform: rotate(-2deg);
+}
+
 /* ── cards: certificate blocks ──────────────────────────────────────── */
 .card {
   background: var(--paper);

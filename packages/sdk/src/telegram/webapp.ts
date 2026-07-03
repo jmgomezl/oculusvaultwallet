@@ -21,6 +21,12 @@ export interface TelegramWebAppLike {
     impactOccurred?: (style: string) => void;
     notificationOccurred?: (type: "error" | "success" | "warning") => void;
   };
+  BackButton?: {
+    show: () => void;
+    hide: () => void;
+    onClick: (cb: () => void) => void;
+    offClick: (cb: () => void) => void;
+  };
 }
 
 export function getTelegramWebApp(): TelegramWebAppLike | null {
@@ -92,6 +98,37 @@ export function scanQr(promptText?: string): Promise<string | null> {
       if (!settled) resolve(null);
     }
   });
+}
+
+/**
+ * Show Telegram's native Back button wired to `onClick`, or hide it.
+ * Returns a cleanup that unbinds and hides — ideal for useEffect. No-ops
+ * outside Telegram.
+ */
+export function setTelegramBackButton(
+  visible: boolean,
+  onClick?: () => void,
+): () => void {
+  const bb = getTelegramWebApp()?.BackButton;
+  if (!bb) return () => {};
+  try {
+    if (visible) {
+      if (onClick) bb.onClick(onClick);
+      bb.show();
+      return () => {
+        try {
+          if (onClick) bb.offClick(onClick);
+          bb.hide();
+        } catch {
+          /* fine */
+        }
+      };
+    }
+    bb.hide();
+  } catch {
+    /* fine */
+  }
+  return () => {};
 }
 
 /** Fire Telegram haptic feedback if available; silently no-ops elsewhere. */

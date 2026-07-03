@@ -7,19 +7,21 @@ import {
   canScanQr,
   scanQr,
   haptic,
+  setTelegramBackButton,
   type Balance,
   type HederaNetwork,
   type HistoryItem,
   type PayIntent,
   type WalletIdentity,
 } from "@oculusvault/sdk";
-import { authenticate, type AuthResult } from "./api.js";
+import { authenticate, isDemoMode, type AuthResult } from "./api.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
 import { Landing } from "./Landing.js";
 import { Aperture } from "./Aperture.js";
 
 type Phase = "loading" | "error" | "locked" | "ready";
+type View = "home" | "receive" | "send";
 
 const NET_KEY = "oculusvault:network";
 const MAINNET_ACK_KEY = "oculusvault:mainnetAck";
@@ -314,16 +316,17 @@ function Dashboard({
   network: HederaNetwork;
   onSwitchNetwork: (n: HederaNetwork) => void;
 }) {
-  // A pay deep-link (NFC tag / QR / t.me link) pre-fills the Send tab.
+  // A pay deep-link (NFC tag / QR / t.me link) jumps straight to Send.
   const [intent] = useState<PayIntent | null>(() =>
     parsePayIntent(getStartParam() ?? ""),
   );
+  const [view, setView] = useState<View>(intent ? "send" : "home");
   const [balance, setBalance] = useState<Balance | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [toast, setToast] = useState<string>("");
-  const [tab, setTab] = useState<"receive" | "send">(intent ? "send" : "receive");
   const [revealedKey, setRevealedKey] = useState("");
   const [backupDone, setBackupDone] = useState(false);
+  const [copied, setCopied] = useState<string>("");
 
   const refresh = useCallback(async () => {
     const [b, h, accountId] = await Promise.all([
@@ -354,8 +357,103 @@ function Dashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Telegram's native Back button drives sub-view navigation.
+  useEffect(() => {
+    return setTelegramBackButton(view !== "home", () => {
+      haptic("tap");
+      setView("home");
+    });
+  }, [view]);
+
+  const copy = useCallback((text: string, tag: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      haptic("tap");
+      setCopied(tag);
+      setTimeout(() => setCopied(""), 1500);
+    });
+  }, []);
+
   const revealKey = async () => setRevealedKey(await wallet.exportKey());
   const usd = balance ? formatUsd(balance.usdEstimate) : null;
+
+  if (view === "receive") {
+    return (
+      <div className={network === "mainnet" ? "app on-mainnet" : "app"}>
+        <ViewHead title="Receive" onBack={() => setView("home")} />
+        <div className="card center">
+          <div className="qr-frame">
+            <Qr value={identity.evmAddress} />
+          </div>
+          <p className="muted small">
+            Scan to pay this wallet — or share the address below. It works on
+            every network.
+          </p>
+          <code className="addr" onClick={() => copy(identity.evmAddress, "evm")}>
+            {identity.evmAddress}
+          </code>
+          <button className="btn primary" onClick={() => copy(identity.evmAddress, "evm")}>
+            {copied === "evm" ? "Copied ✓" : "Copy address"}
+          </button>
+        </div>
+
+        <div className="card">
+          <h3>Hedera account Nº</h3>
+          {identity.hederaAccountId ? (
+            <>
+              <div className="acct-row">
+                <code className="addr" onClick={() => copy(identity.hederaAccountId!, "acct")}>
+                  {identity.hederaAccountId}
+                </code>
+                <button className="btn sm" onClick={() => copy(identity.hederaAccountId!, "acct")}>
+                  {copied === "acct" ? "✓" : "Copy"}
+                </button>
+              </div>
+              <a className="link small" href={wallet.accountUrl()} target="_blank" rel="noreferrer">
+                View on Hashscan ↗
+              </a>
+              <p className="muted xsmall">
+                Use either identifier to receive — the 0x address and this
+                account Nº are the same wallet.
+              </p>
+            </>
+          ) : (
+            <p className="muted small">
+              <span className="pending-stamp">Pending</span> Your account
+              number is minted by the network with your <strong>first
+              deposit</strong> — send any amount of {network} HBAR to the
+              address above and it appears here automatically.
+            </p>
+          )}
+        </div>
+
+        {network === "testnet" && (
+          <a className="voucher" href="https://faucet.hedera.com" target="_blank" rel="noreferrer">
+            <span className="voucher-tag">Free ℏ</span>
+            <span className="voucher-text">
+              No testnet HBAR yet? Copy your address and claim up to 100 ℏ a
+              day at the official Hedera faucet ↗
+            </span>
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  if (view === "send") {
+    return (
+      <div className={network === "mainnet" ? "app on-mainnet" : "app"}>
+        <ViewHead title="Send" onBack={() => setView("home")} />
+        <SendTab
+          wallet={wallet}
+          onSent={refresh}
+          prefill={intent}
+          balanceHbar={balance ? balance.hbar : null}
+          network={network}
+          accountReady={identity.hederaAccountId != null}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={network === "mainnet" ? "app on-mainnet" : "app"}>
@@ -398,36 +496,39 @@ function Dashboard({
         <span className="balance-label">Balance · {network}</span>
         <div className="balance">{balance ? formatHbar(balance.hbar) : "…"} ℏ</div>
         {usd && <span className="muted small usd">{usd}</span>}
-        <a className="acct-pill" href={wallet.accountUrl()} target="_blank" rel="noreferrer">
-          {identity.hederaAccountId ?? "auto-creates on first deposit"} ↗
-        </a>
+        <div className="id-row">
+          <button className="chip" onClick={() => copy(identity.evmAddress, "evm")}>
+            {copied === "evm" ? "copied ✓" : shortAddr(identity.evmAddress)}
+          </button>
+          {identity.hederaAccountId ? (
+            <a className="chip" href={wallet.accountUrl()} target="_blank" rel="noreferrer">
+              Nº {identity.hederaAccountId} ↗
+            </a>
+          ) : (
+            <span className="chip chip-pending" title="Appears with your first deposit">
+              Nº pending first deposit
+            </span>
+          )}
+        </div>
       </section>
 
       <div className="tabs">
-        <button
-          className={tab === "receive" ? "tab active" : "tab"}
-          onClick={() => setTab("receive")}
-        >
+        <button className="tab" onClick={() => { haptic("tap"); setView("receive"); }}>
           <span className="tab-glyph in">↓</span> Receive
         </button>
-        <button
-          className={tab === "send" ? "tab active" : "tab"}
-          onClick={() => setTab("send")}
-        >
+        <button className="tab" onClick={() => { haptic("tap"); setView("send"); }}>
           <span className="tab-glyph out">↑</span> Send
         </button>
       </div>
 
-      {tab === "receive" ? (
-        <ReceiveTab identity={identity} network={network} />
-      ) : (
-        <SendTab
-          wallet={wallet}
-          onSent={refresh}
-          prefill={intent}
-          balanceHbar={balance ? balance.hbar : null}
-          network={network}
-        />
+      {balance != null && Number(balance.hbar) === 0 && network === "testnet" && (
+        <a className="voucher" href="https://faucet.hedera.com" target="_blank" rel="noreferrer">
+          <span className="voucher-tag">Free ℏ</span>
+          <span className="voucher-text">
+            Empty vault? Claim free testnet ℏ at the official Hedera faucet and
+            watch your first deposit arrive ↗
+          </span>
+        </a>
       )}
 
       <HistoryList items={history} />
@@ -437,51 +538,15 @@ function Dashboard({
   );
 }
 
-function ReceiveTab({
-  identity,
-  network,
-}: {
-  identity: WalletIdentity;
-  network: HederaNetwork;
-}) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(identity.evmAddress).then(() => {
-      haptic("tap");
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
+/** Sub-view header: in-app back arrow (Telegram's native Back also works). */
+function ViewHead({ title, onBack }: { title: string; onBack: () => void }) {
   return (
-    <div className="card center">
-      <div className="qr-frame">
-        <Qr value={identity.evmAddress} />
-      </div>
-      <p className="muted small">Your address (EVM / Hedera alias)</p>
-      <code className="addr" onClick={copy}>
-        {identity.evmAddress}
-      </code>
-      <button className="btn primary" onClick={copy}>
-        {copied ? "Copied ✓" : "Copy address"}
+    <div className="view-head">
+      <button className="back-btn" onClick={onBack} aria-label="Back">
+        ‹
       </button>
-      <p className="muted xsmall">
-        Send {network} HBAR here. The first deposit auto-creates your Hedera
-        account. Same address on every network.
-      </p>
-      {network === "testnet" && (
-        <a
-          className="voucher"
-          href="https://faucet.hedera.com"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <span className="voucher-tag">Free ℏ</span>
-          <span className="voucher-text">
-            No testnet HBAR yet? Copy your address above and claim up to 100 ℏ
-            a day at the official Hedera faucet ↗
-          </span>
-        </a>
-      )}
+      <h2 className="view-title">{title}</h2>
+      <span className="view-spacer" />
     </div>
   );
 }
@@ -492,12 +557,14 @@ function SendTab({
   prefill,
   balanceHbar,
   network,
+  accountReady,
 }: {
   wallet: OculusVault;
   onSent: () => void;
   prefill: PayIntent | null;
   balanceHbar: string | null;
   network: HederaNetwork;
+  accountReady: boolean;
 }) {
   const [to, setTo] = useState(prefill?.to ?? "");
   const [amount, setAmount] = useState(prefill?.amountHbar ?? "");
@@ -562,6 +629,20 @@ function SendTab({
     }
   };
 
+  if (!accountReady) {
+    return (
+      <div className="card center">
+        <p className="muted small">
+          <span className="pending-stamp">Pending</span> Your wallet can’t send
+          yet — it needs a first deposit to activate its Hedera account. Share
+          your address from <strong>Receive</strong>
+          {network === "testnet" ? " or claim free testnet ℏ from the faucet" : ""}
+          , then come back.
+        </p>
+      </div>
+    );
+  }
+
   if (stage === "confirm") {
     return (
       <div className="card">
@@ -603,7 +684,7 @@ function SendTab({
           value={to}
           onChange={(e) => setTo(e.target.value)}
         />
-        {canScanQr() && (
+        {!isDemoMode() && canScanQr() && (
           <button className="btn scan" onClick={scan} title="Scan a QR code">
             ⌗
           </button>
