@@ -27,6 +27,7 @@ export interface TelegramWebAppLike {
     onClick: (cb: () => void) => void;
     offClick: (cb: () => void) => void;
   };
+  openTelegramLink?: (url: string) => void;
 }
 
 export function getTelegramWebApp(): TelegramWebAppLike | null {
@@ -129,6 +130,24 @@ export function setTelegramBackButton(
     /* fine */
   }
   return () => {};
+}
+
+/**
+ * Open a t.me link without leaving Telegram (native chat picker for
+ * share links, instant bot/app opening). Falls back to window.open outside
+ * Telegram.
+ */
+export function openTelegramLink(url: string): void {
+  const wa = getTelegramWebApp();
+  if (wa?.openTelegramLink) {
+    try {
+      wa.openTelegramLink(url);
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  (globalThis as any)?.open?.(url, "_blank");
 }
 
 /** Fire Telegram haptic feedback if available; silently no-ops elsewhere. */

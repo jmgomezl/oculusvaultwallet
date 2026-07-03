@@ -270,6 +270,33 @@ a.chip {
   letter-spacing: 0.05em;
 }
 
+/* request-a-payment */
+.req-actions {
+  display: flex;
+  gap: 8px;
+}
+.req-actions .btn {
+  flex: 1;
+}
+.req-preview {
+  font-size: 10px !important;
+  color: var(--green);
+  cursor: pointer;
+}
+.req-live {
+  color: var(--green);
+}
+.linklike {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 .pending-stamp {
   display: inline-block;
   margin-right: 6px;

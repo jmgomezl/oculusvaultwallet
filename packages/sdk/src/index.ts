@@ -87,6 +87,7 @@ export {
   scanQr,
   haptic,
   setTelegramBackButton,
+  openTelegramLink,
 } from "./telegram/webapp.js";
 
 // Pay intents (deep links / QR / NFC-tag payloads)

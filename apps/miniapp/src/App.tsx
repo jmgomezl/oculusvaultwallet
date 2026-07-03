@@ -14,6 +14,7 @@ import {
   type PayIntent,
   type WalletIdentity,
 } from "@oculusvault/sdk";
+import { buildPayLink, openTelegramLink } from "@oculusvault/sdk";
 import { authenticate, isDemoMode, type AuthResult } from "./api.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
@@ -25,6 +26,8 @@ type View = "home" | "receive" | "send";
 
 const NET_KEY = "oculusvault:network";
 const MAINNET_ACK_KEY = "oculusvault:mainnetAck";
+/** Bot username powering share/request links (t.me/<bot>/app?startapp=…). */
+const BOT = import.meta.env.VITE_BOT_USERNAME ?? "";
 
 /** Dev-only escape hatch: run the wallet UI in a browser for local
  * development/preview (`VITE_FORCE_WALLET=true` in .env.development).
@@ -327,6 +330,8 @@ function Dashboard({
   const [exportOpen, setExportOpen] = useState(false);
   const [backupDone, setBackupDone] = useState(false);
   const [copied, setCopied] = useState<string>("");
+  const [reqAmount, setReqAmount] = useState<string>("");
+  const [requestMode, setRequestMode] = useState(false);
 
   const refresh = useCallback(async () => {
     const [b, h, accountId] = await Promise.all([
@@ -376,17 +381,34 @@ function Dashboard({
   const usd = balance ? formatUsd(balance.usdEstimate) : null;
 
   if (view === "receive") {
+    const requestLink = BOT
+      ? buildPayLink(BOT, identity.evmAddress, reqAmount && Number(reqAmount) > 0 ? reqAmount : undefined)
+      : null;
+    const requesting = requestMode && requestLink != null;
     return (
       <div className={network === "mainnet" ? "app on-mainnet" : "app"}>
         <ViewHead title="Receive" onBack={() => setView("home")} />
         <div className="card center">
           <div className="qr-frame">
-            <Qr value={identity.evmAddress} />
+            <Qr value={requesting ? requestLink! : identity.evmAddress} />
           </div>
-          <p className="muted small">
-            Scan to pay this wallet — or share the address below. It works on
-            every network.
-          </p>
+          {requesting ? (
+            <p className="muted small">
+              <strong className="req-live">
+                Requesting{reqAmount && Number(reqAmount) > 0 ? ` ${formatHbar(reqAmount)} ℏ` : " payment"}
+              </strong>{" "}
+              — anyone scanning this with their camera lands in OculusVault
+              with your details pre-filled.{" "}
+              <button className="linklike" onClick={() => setRequestMode(false)}>
+                Show plain address instead
+              </button>
+            </p>
+          ) : (
+            <p className="muted small">
+              Scan to pay this wallet — or share the address below. It works on
+              every network.
+            </p>
+          )}
           <code className="addr" onClick={() => copy(identity.evmAddress, "evm")}>
             {identity.evmAddress}
           </code>
@@ -394,6 +416,50 @@ function Dashboard({
             {copied === "evm" ? "Copied ✓" : "Copy address"}
           </button>
         </div>
+
+        {requestLink && (
+          <div className="card">
+            <h3>Request a payment</h3>
+            <p className="muted small">
+              Send someone a link that opens OculusVault with your details
+              pre-filled — they just confirm.
+            </p>
+            <input
+              className="input"
+              placeholder="Amount in HBAR (optional)"
+              inputMode="decimal"
+              value={reqAmount}
+              onChange={(e) => {
+                setReqAmount(e.target.value);
+                setRequestMode(true);
+              }}
+              onFocus={() => setRequestMode(true)}
+            />
+            <div className="req-actions">
+              <button
+                className="btn primary"
+                onClick={() => {
+                  haptic("tap");
+                  const label =
+                    reqAmount && Number(reqAmount) > 0
+                      ? `Pay me ${formatHbar(reqAmount)} ℏ with OculusVault`
+                      : "Pay me with OculusVault";
+                  openTelegramLink(
+                    `https://t.me/share/url?url=${encodeURIComponent(requestLink)}&text=${encodeURIComponent(label)}`,
+                  );
+                }}
+              >
+                Share in Telegram
+              </button>
+              <button className="btn" onClick={() => copy(requestLink, "reqlink")}>
+                {copied === "reqlink" ? "Copied ✓" : "Copy link"}
+              </button>
+            </div>
+            <code className="addr req-preview" onClick={() => copy(requestLink, "reqlink")}>
+              {requestLink}
+            </code>
+          </div>
+        )}
 
         <div className="card">
           <h3>Hedera account Nº</h3>
