@@ -417,10 +417,18 @@ function Dashboard({
             Copy address
           </button>
           {network === "testnet" && (
-            <a className="voucher" href="https://faucet.hedera.com" target="_blank" rel="noreferrer">
+            <a
+              className="voucher"
+              href="https://faucet.hedera.com"
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => navigator.clipboard.writeText(identity.evmAddress)}
+            >
               <span className="voucher-tag">Free ℏ</span>
               <span className="voucher-text">
                 Claim up to 100 testnet ℏ a day at the official Hedera faucet ↗
+                — <strong>we copy your address as you click</strong>, just
+                paste it there.
               </span>
             </a>
           )}

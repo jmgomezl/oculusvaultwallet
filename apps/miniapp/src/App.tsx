@@ -429,11 +429,18 @@ function Dashboard({
         </div>
 
         {network === "testnet" && (
-          <a className="voucher" href="https://faucet.hedera.com" target="_blank" rel="noreferrer">
+          <a
+            className="voucher"
+            href="https://faucet.hedera.com"
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => copy(identity.evmAddress, "evm")}
+          >
             <span className="voucher-tag">Free ℏ</span>
             <span className="voucher-text">
-              No testnet HBAR yet? Copy your address and claim up to 100 ℏ a
-              day at the official Hedera faucet ↗
+              Claim up to 100 testnet ℏ a day at the official Hedera faucet ↗
+              — <strong>we copy your address as you tap</strong>, just paste it
+              there.
             </span>
           </a>
         )}
@@ -524,11 +531,18 @@ function Dashboard({
       </div>
 
       {balance != null && Number(balance.hbar) === 0 && network === "testnet" && (
-        <a className="voucher" href="https://faucet.hedera.com" target="_blank" rel="noreferrer">
+        <a
+          className="voucher"
+          href="https://faucet.hedera.com"
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => copy(identity.evmAddress, "evm")}
+        >
           <span className="voucher-tag">Free ℏ</span>
           <span className="voucher-text">
-            Empty vault? Claim free testnet ℏ at the official Hedera faucet and
-            watch your first deposit arrive ↗
+            Empty vault? Claim free testnet ℏ at the official faucet ↗ —{" "}
+            <strong>we copy your address as you tap</strong>, just paste it
+            there.
           </span>
         </a>
       )}
