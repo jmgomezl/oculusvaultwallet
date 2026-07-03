@@ -82,7 +82,7 @@
   align-items: center;
   gap: 26px;
 }
-.lp-nav-links a {
+.lp-nav-links a:not(.lp-btn) {
   color: var(--ink-2);
   text-decoration: none;
   font-size: 14px;
@@ -90,7 +90,7 @@
   border-bottom: 1px solid transparent;
   transition: color 0.2s, border-color 0.2s;
 }
-.lp-nav-links a:hover {
+.lp-nav-links a:not(.lp-btn):hover {
   color: var(--green);
   border-color: var(--green);
 }
