@@ -1,55 +1,41 @@
-/** The OculusVault mark: a concentric aperture / vault-eye. Shared by the
- * landing page and the wallet chrome. */
+/**
+ * The OculusVault mark: a guilloché rosette — the engraved "oculus" of a
+ * banknote. Pure fine-line strokes in currentColor so it prints in whatever
+ * ink surrounds it (ink on paper, paper on ink, gold on mainnet).
+ */
 export function Aperture({ size, hero = false }: { size: number; hero?: boolean }) {
+  const petals = hero ? 36 : 24;
+  const rings = hero ? [88, 62] : [88];
   return (
     <svg
-      className={hero ? "lp-aperture lp-aperture-hero" : "lp-aperture"}
+      className={hero ? "rosette rosette-hero" : "rosette"}
       width={size}
       height={size}
       viewBox="0 0 200 200"
       fill="none"
       aria-hidden
     >
-      <defs>
-        <linearGradient id="ap-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#7c5cff" />
-          <stop offset="1" stopColor="#00e0c6" />
-        </linearGradient>
-        <radialGradient id="ap-core" cx="0.5" cy="0.5" r="0.5">
-          <stop offset="0" stopColor="#00e0c6" stopOpacity="0.9" />
-          <stop offset="0.6" stopColor="#7c5cff" stopOpacity="0.45" />
-          <stop offset="1" stopColor="#7c5cff" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <circle cx="100" cy="100" r="92" stroke="url(#ap-g)" strokeWidth="1.5" opacity="0.55" />
-      <circle
-        className="lp-ring-dash"
-        cx="100"
-        cy="100"
-        r="74"
-        stroke="url(#ap-g)"
-        strokeWidth="2"
-        strokeDasharray="6 10"
-        opacity="0.8"
-      />
-      {hero &&
-        Array.from({ length: 6 }).map((_, i) => (
-          <line
+      {/* spirograph petals */}
+      <g className="rosette-spin" stroke="currentColor" strokeWidth={hero ? 0.7 : 1} opacity="0.85">
+        {Array.from({ length: petals }).map((_, i) => (
+          <ellipse
             key={i}
-            x1="100"
-            y1="100"
-            x2="100"
-            y2="38"
-            stroke="url(#ap-g)"
-            strokeWidth="6"
-            strokeLinecap="round"
-            opacity="0.5"
-            transform={`rotate(${i * 60} 100 100)`}
+            cx="100"
+            cy="100"
+            rx="86"
+            ry="30"
+            transform={`rotate(${(i * 180) / petals} 100 100)`}
           />
         ))}
-      <circle cx="100" cy="100" r="46" fill="url(#ap-core)" />
-      <circle cx="100" cy="100" r="20" fill="#00e0c6" opacity="0.95" />
-      <circle cx="100" cy="100" r="20" stroke="#0a0b0f" strokeWidth="3" />
+      </g>
+      {/* containment rings */}
+      {rings.map((r) => (
+        <circle key={r} cx="100" cy="100" r={r} stroke="currentColor" strokeWidth="1.4" />
+      ))}
+      <circle cx="100" cy="100" r="96" stroke="currentColor" strokeWidth="0.8" strokeDasharray="1.5 3" />
+      {/* the pupil */}
+      <circle cx="100" cy="100" r="13" fill="currentColor" />
+      <circle cx="100" cy="100" r="20" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }

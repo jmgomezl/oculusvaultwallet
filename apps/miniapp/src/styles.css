@@ -1,19 +1,19 @@
-/* OculusVault wallet — the aperture-vault language, applied to the app.
-   Ink ground, bone type, violet→iris gradient for action, gold for mainnet. */
+/* OculusVault wallet — "The Engraved Note" system.
+   The wallet is a document of value: paper ground, engraved ink, banknote
+   green for action, vermilion for stamps/warnings, gold foil for mainnet. */
 :root {
-  --bg: #0a0b0f;
-  --card: #12141c;
-  --card-2: #171a24;
-  --text: #f4f1ea;
-  --muted: #9aa0ad;
-  --line: rgba(244, 241, 234, 0.1);
-  --violet: #7c5cff;
-  --iris: #00e0c6;
-  --gold: #e8b563;
-  --in: #00e0c6;
-  --out: #ff6b6b;
-  --link: #5ac8fa;
-  --grad: linear-gradient(120deg, var(--iris), var(--violet));
+  --paper: #f5f1e6;
+  --paper-2: #ede7d6;
+  --paper-3: #e4dcc7;
+  --ink: #1c1a14;
+  --ink-2: #57523f;
+  --rule: rgba(28, 26, 20, 0.28);
+  --rule-soft: rgba(28, 26, 20, 0.13);
+  --green: #1d5c45;
+  --green-2: #2e7d5b;
+  --red: #b3391f;
+  --gold: #a8842c;
+  --gold-2: #8a6b1f;
 }
 
 * {
@@ -21,20 +21,30 @@
 }
 body {
   margin: 0;
-  background:
-    radial-gradient(90% 50% at 100% 0%, rgba(124, 92, 255, 0.14), transparent 60%),
-    radial-gradient(70% 40% at 0% 100%, rgba(0, 224, 198, 0.08), transparent 60%),
-    var(--bg);
-  background-attachment: fixed;
-  color: var(--text);
+  background: var(--paper);
+  color: var(--ink);
   font-family: "Satoshi", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+body::after {
+  /* paper grain over everything */
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+::selection {
+  background: var(--green);
+  color: var(--paper);
 }
 
 .app {
   max-width: 460px;
   margin: 0 auto;
-  padding: 16px 16px 8px;
+  padding: 14px 16px 8px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -47,130 +57,149 @@ body {
   gap: 10px;
 }
 
+/* rosette ink */
+.rosette {
+  color: var(--green);
+}
+.rosette-spin {
+  transform-origin: 100px 100px;
+  animation: rosette-turn 80s linear infinite;
+}
+@keyframes rosette-turn {
+  to { transform: rotate(360deg); }
+}
+
 /* ── chrome ─────────────────────────────────────────────────────────── */
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 0;
+  padding: 4px 0 10px;
+  border-bottom: 2px solid var(--ink);
 }
 .logo {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  font-family: "Clash Display", sans-serif;
-  font-weight: 600;
-  font-size: 18px;
-  letter-spacing: -0.01em;
+  font-family: "Zodiak", serif;
+  font-weight: 700;
+  font-size: 19px;
 }
 .net {
   font-size: 10.5px;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(124, 92, 255, 0.16);
-  color: var(--link);
+  letter-spacing: 0.12em;
+  padding: 5px 11px;
+  border: 2px solid var(--green);
+  border-radius: 6px;
+  color: var(--green);
+  transform: rotate(-2deg);
 }
 .net.mainnet {
-  background: rgba(232, 181, 99, 0.16);
-  color: var(--gold);
+  border-color: var(--gold);
+  color: var(--gold-2);
 }
 
 .netswitch {
   display: inline-flex;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--card);
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--paper-2);
 }
 .netswitch .seg {
   border: none;
   background: transparent;
-  color: var(--muted);
+  color: var(--ink-2);
   font-family: "Satoshi", sans-serif;
   font-size: 11.5px;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
-  padding: 6px 12px;
-  border-radius: 999px;
+  letter-spacing: 0.08em;
+  padding: 8px 13px;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
+.netswitch .seg + .seg {
+  border-left: 1.5px solid var(--ink);
+}
 .netswitch .seg.active {
-  background: rgba(124, 92, 255, 0.28);
-  color: var(--text);
+  background: var(--green);
+  color: var(--paper);
 }
 .netswitch .seg.active.gold-seg {
-  background: rgba(232, 181, 99, 0.25);
-  color: var(--gold);
+  background: var(--gold);
+  color: var(--paper);
 }
 
-/* ── balance hero ───────────────────────────────────────────────────── */
+/* ── balance: the note itself ───────────────────────────────────────── */
 .balance-hero {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 22px 16px 20px;
-  border-radius: 22px;
-  border: 1px solid var(--line);
+  gap: 4px;
+  padding: 22px 16px 18px;
+  border: 1.5px solid var(--ink);
+  outline: 1px solid var(--rule);
+  outline-offset: 4px;
+  border-radius: 4px;
   background:
-    radial-gradient(120% 150% at 50% -30%, rgba(124, 92, 255, 0.18), transparent 60%),
-    var(--card);
-  position: relative;
-  overflow: hidden;
+    radial-gradient(130% 170% at 15% 25%, rgba(29, 92, 69, 0.06), transparent 55%),
+    var(--paper-2);
+  margin: 5px 2px 2px;
 }
-.balance-hero::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 15%;
-  right: 15%;
-  height: 1.5px;
-  background: var(--grad);
-  opacity: 0.7;
+.app.on-mainnet .balance-hero {
+  background:
+    radial-gradient(130% 170% at 15% 25%, rgba(168, 132, 44, 0.1), transparent 55%),
+    var(--paper-2);
 }
 .balance-label {
-  font-size: 10.5px;
-  font-weight: 600;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9.5px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--muted);
+  letter-spacing: 0.22em;
+  color: var(--ink-2);
 }
 .balance {
-  font-family: "Clash Display", sans-serif;
-  font-weight: 600;
-  font-size: clamp(40px, 11vw, 52px);
+  font-family: "Zodiak", serif;
+  font-weight: 900;
+  font-size: clamp(42px, 12vw, 56px);
   letter-spacing: -0.02em;
-  line-height: 1.05;
+  line-height: 1.02;
 }
 .app.on-mainnet .balance {
-  color: var(--gold);
+  color: var(--gold-2);
 }
 .usd {
-  margin-top: -3px;
+  margin-top: -2px;
+  font-family: "Zodiak", serif;
+  font-style: italic;
 }
 .acct-pill {
-  margin-top: 6px;
+  margin-top: 7px;
   font-family: "JetBrains Mono", monospace;
-  font-size: 11.5px;
-  color: var(--link);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--red);
   text-decoration: none;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.02);
+  padding: 4px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.acct-pill::before {
+  content: "Nº ";
 }
 
-/* ── cards ──────────────────────────────────────────────────────────── */
+/* ── cards: certificate blocks ──────────────────────────────────────── */
 .card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 18px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 4px 4px 0 rgba(28, 26, 20, 0.12);
   padding: 18px;
   display: flex;
   flex-direction: column;
@@ -182,34 +211,36 @@ body {
 }
 .card h2 {
   margin: 0;
-  font-family: "Clash Display", sans-serif;
-  font-weight: 600;
-  font-size: 21px;
-  letter-spacing: -0.01em;
+  font-family: "Zodiak", serif;
+  font-weight: 900;
+  font-size: 22px;
 }
 .card h3 {
   margin: 0 0 2px;
-  font-family: "Clash Display", sans-serif;
-  font-weight: 600;
-  font-size: 15px;
-  letter-spacing: 0.01em;
+  font-family: "Zodiak", serif;
+  font-weight: 700;
+  font-size: 16px;
 }
 
 /* ── inputs & buttons ───────────────────────────────────────────────── */
 .input {
   width: 100%;
   padding: 13px 15px;
-  border-radius: 13px;
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--text);
+  border-radius: 6px;
+  border: 1.5px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
   font-family: "Satoshi", sans-serif;
   font-size: 16px;
   transition: border-color 0.2s;
 }
+.input::placeholder {
+  color: var(--ink-2);
+  opacity: 0.7;
+}
 .input:focus {
   outline: none;
-  border-color: var(--iris);
+  border-color: var(--green);
 }
 .input-row {
   display: flex;
@@ -222,34 +253,45 @@ body {
 
 .btn {
   padding: 13px 16px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--card-2);
-  color: var(--text);
+  border-radius: 8px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-2);
+  color: var(--ink);
   font-family: "Satoshi", sans-serif;
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.25s, opacity 0.2s;
+  box-shadow: 3px 3px 0 rgba(28, 26, 20, 0.7);
+  transition: transform 0.12s, box-shadow 0.12s, background 0.2s;
 }
 .btn:hover {
-  transform: translateY(-1px);
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 rgba(28, 26, 20, 0.7);
+}
+.btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 rgba(28, 26, 20, 0.7);
 }
 .btn.primary {
-  background: var(--grad);
-  color: #07120f;
-  border-color: transparent;
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--paper);
 }
 .btn.primary:hover {
-  box-shadow: 0 10px 28px -10px rgba(0, 224, 198, 0.55);
+  background: var(--green-2);
 }
 .btn.gold {
-  background: linear-gradient(120deg, #e8b563, #d99a3d);
-  color: #1a1206;
-  border-color: transparent;
+  background: var(--gold);
+  border-color: var(--gold-2);
+  color: var(--paper);
 }
 .btn.ghost {
   background: transparent;
+  box-shadow: none;
+  border-color: var(--rule);
+}
+.btn.ghost:hover {
+  transform: none;
 }
 .btn.sm {
   padding: 8px 15px;
@@ -258,18 +300,18 @@ body {
 .btn.scan {
   flex: 0 0 auto;
   width: 48px;
-  font-size: 20px;
+  font-size: 19px;
   padding: 0;
-  border-color: rgba(0, 224, 198, 0.5);
-  color: var(--iris);
+  color: var(--green);
 }
 .btn:disabled {
   opacity: 0.45;
   transform: none;
   box-shadow: none;
+  cursor: default;
 }
 
-/* ── tabs ───────────────────────────────────────────────────────────── */
+/* ── action tabs: cheque-book tabs ──────────────────────────────────── */
 .tabs {
   display: flex;
   gap: 10px;
@@ -281,116 +323,116 @@ body {
   justify-content: center;
   gap: 8px;
   padding: 13px;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--muted);
+  border-radius: 8px;
+  border: 1.5px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink-2);
   font-family: "Satoshi", sans-serif;
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: border-color 0.2s, color 0.2s;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 .tab.active {
-  color: var(--text);
-  border-color: var(--violet);
-  background:
-    radial-gradient(120% 200% at 50% -60%, rgba(124, 92, 255, 0.22), transparent 60%),
-    var(--card);
+  color: var(--ink);
+  border-color: var(--ink);
+  background: var(--paper-2);
+  box-shadow: 3px 3px 0 rgba(28, 26, 20, 0.12);
 }
 .tab-glyph {
   display: inline-grid;
   place-items: center;
   width: 22px;
   height: 22px;
-  border-radius: 999px;
-  font-size: 13px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 12px;
   font-weight: 800;
 }
 .tab-glyph.in {
-  background: rgba(0, 224, 198, 0.15);
-  color: var(--iris);
+  color: var(--green);
 }
 .tab-glyph.out {
-  background: rgba(124, 92, 255, 0.2);
-  color: #b3a1ff;
+  color: var(--red);
 }
 
 /* ── receive ────────────────────────────────────────────────────────── */
 .qr-frame {
-  padding: 10px;
-  border-radius: 20px;
-  background: #f4f1ea;
-  box-shadow: 0 0 0 1px var(--line), 0 18px 44px -18px rgba(0, 0, 0, 0.7);
+  padding: 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: 4px;
+  outline: 1px solid var(--rule);
+  outline-offset: 3px;
+  background: #fdfcf8;
 }
 .qr {
   display: block;
-  border-radius: 12px;
 }
 .qr-placeholder {
-  background: var(--card-2);
-  border-radius: 12px;
+  background: var(--paper-2);
 }
 .addr {
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   word-break: break-all;
-  background: var(--bg);
+  background: var(--paper-2);
   padding: 9px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
+  border-radius: 6px;
+  border: 1px solid var(--rule-soft);
   cursor: pointer;
 }
 .addr.break {
-  color: var(--out);
+  color: var(--red);
 }
 
-/* ── history ────────────────────────────────────────────────────────── */
+/* ── history: the ledger ────────────────────────────────────────────── */
 .row {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 11px 2px;
-  border-top: 1px solid var(--line);
+  border-top: 1px dashed var(--rule);
   text-decoration: none;
-  color: var(--text);
+  color: var(--ink);
 }
 .row-glyph {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  font-size: 13px;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 12px;
   font-weight: 800;
   flex: 0 0 auto;
 }
 .row-glyph.in {
-  background: rgba(0, 224, 198, 0.14);
-  color: var(--iris);
+  color: var(--green);
 }
 .row-glyph.out {
-  background: rgba(255, 107, 107, 0.14);
-  color: var(--out);
+  color: var(--red);
 }
 .amt {
-  font-weight: 800;
-  font-size: 14.5px;
+  font-family: "Zodiak", serif;
+  font-weight: 700;
+  font-size: 15.5px;
 }
 .amt.in {
-  color: var(--iris);
+  color: var(--green);
 }
 .amt.out {
-  color: var(--out);
+  color: var(--red);
 }
 .row-when {
   flex: 1;
   text-align: right;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px !important;
 }
 
 /* ── text utilities ─────────────────────────────────────────────────── */
 .muted {
-  color: var(--muted);
+  color: var(--ink-2);
 }
 .small {
   font-size: 13px;
@@ -399,60 +441,77 @@ body {
   font-size: 11px;
 }
 .link {
-  color: var(--link);
-  text-decoration: none;
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .gold {
-  color: var(--gold);
+  color: var(--gold-2);
+  font-weight: 700;
 }
 .error {
-  color: var(--out);
+  color: var(--red);
   font-size: 13px;
 }
 .success {
-  color: var(--iris);
+  color: var(--green);
   font-size: 13px;
+  font-weight: 700;
 }
 code {
   font-family: "JetBrains Mono", monospace;
 }
 
-/* ── toast / strips / banner ────────────────────────────────────────── */
+/* ── toast: the RECEIVED stamp ──────────────────────────────────────── */
 .toast {
   position: sticky;
   top: 10px;
   z-index: 20;
-  background: var(--iris);
-  color: #04211c;
-  padding: 11px 14px;
-  border-radius: 999px;
+  align-self: center;
+  padding: 9px 20px;
+  border: 3px double var(--green);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--green);
   font-weight: 800;
-  text-align: center;
-  box-shadow: 0 14px 34px -12px rgba(0, 224, 198, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 13px;
+  transform: rotate(-2deg);
+  animation: stamp-in 0.25s cubic-bezier(0.2, 1.4, 0.4, 1);
+  box-shadow: 3px 3px 0 rgba(28, 26, 20, 0.15);
 }
+@keyframes stamp-in {
+  from { transform: rotate(4deg) scale(1.6); opacity: 0; }
+  to { transform: rotate(-2deg) scale(1); opacity: 1; }
+}
+
 .mainnet-strip {
   text-align: center;
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--gold);
-  background: rgba(232, 181, 99, 0.1);
-  border: 1px solid rgba(232, 181, 99, 0.3);
-  border-radius: 12px;
-  padding: 8px 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold-2);
+  border: 2px solid var(--gold);
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: rgba(168, 132, 44, 0.07);
 }
+
 .banner {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid rgba(232, 181, 99, 0.35);
-  background: rgba(232, 181, 99, 0.07);
+  border: 1px solid var(--ink);
+  border-left: 4px solid var(--red);
+  border-radius: 4px;
+  background: var(--paper-2);
   font-size: 14px;
 }
 .banner strong {
-  color: var(--gold);
+  color: var(--red);
 }
 .banner-actions {
   display: flex;
@@ -466,12 +525,12 @@ code {
   justify-content: space-between;
   gap: 12px;
   padding: 11px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px dashed var(--rule);
 }
 .confirm-amt {
-  font-family: "Clash Display", sans-serif;
-  font-weight: 600;
-  font-size: 24px;
+  font-family: "Zodiak", serif;
+  font-weight: 900;
+  font-size: 26px;
 }
 
 /* ── modal ──────────────────────────────────────────────────────────── */
@@ -479,8 +538,8 @@ code {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(4, 5, 8, 0.7);
-  backdrop-filter: blur(5px);
+  background: rgba(28, 26, 20, 0.45);
+  backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -489,6 +548,8 @@ code {
 .modal {
   max-width: 420px;
   width: 100%;
+  outline: 1px solid var(--rule);
+  outline-offset: 4px;
 }
 .checklist {
   margin: 0;
@@ -498,7 +559,7 @@ code {
   gap: 5px;
 }
 
-/* ── unlock / create screen ─────────────────────────────────────────── */
+/* ── unlock: the signing ceremony ───────────────────────────────────── */
 .app.unlock {
   min-height: 88vh;
   justify-content: center;
@@ -507,7 +568,7 @@ code {
   gap: 8px;
 }
 .unlock-mark {
-  filter: drop-shadow(0 0 34px rgba(0, 224, 198, 0.3));
+  color: var(--green);
   animation: vault-float 7s ease-in-out infinite;
 }
 @keyframes vault-float {
@@ -515,11 +576,11 @@ code {
   50% { transform: translateY(4px); }
 }
 .unlock-title {
-  margin: 6px 0 0;
-  font-family: "Clash Display", sans-serif;
-  font-weight: 600;
-  font-size: 30px;
-  letter-spacing: -0.02em;
+  margin: 8px 0 0;
+  font-family: "Zodiak", serif;
+  font-weight: 900;
+  font-size: 34px;
+  letter-spacing: -0.015em;
 }
 .unlock-sub {
   margin: 0 0 10px;
@@ -530,19 +591,15 @@ code {
   max-width: 380px;
 }
 .unlock-foot {
-  letter-spacing: 0.02em;
-}
-
-/* the aperture's dashed ring spins here too */
-.lp-ring-dash {
-  transform-origin: 100px 100px;
-  animation: vault-spin 26s linear infinite;
-}
-@keyframes vault-spin {
-  to { transform: rotate(360deg); }
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: 0.06em;
 }
 
 .footer {
   text-align: center;
-  padding: 14px 0 10px;
+  padding: 16px 0 10px;
+  border-top: 2px solid var(--ink);
+  margin-top: 4px;
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: 0.04em;
 }
