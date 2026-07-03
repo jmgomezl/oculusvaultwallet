@@ -13,20 +13,23 @@ import {
   type PayIntent,
   type WalletIdentity,
 } from "@oculusvault/sdk";
-import { authenticate, isDemoMode, type AuthResult } from "./api.js";
+import { authenticate, type AuthResult } from "./api.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
 import { Landing } from "./Landing.js";
+import { Aperture } from "./Aperture.js";
 
 type Phase = "loading" | "error" | "locked" | "ready";
 
 const NET_KEY = "oculusvault:network";
 const MAINNET_ACK_KEY = "oculusvault:mainnetAck";
 
-/** Demo (browser) is a testnet-only sandbox: without a verified Telegram
- * identity there is no real wallet to put real money in. */
+/** Dev-only escape hatch: run the wallet UI in a browser for local
+ * development/preview (`VITE_FORCE_WALLET=true` in .env.development).
+ * Never set in production builds. */
+const FORCE_WALLET = import.meta.env.VITE_FORCE_WALLET === "true";
+
 function loadSavedNetwork(): HederaNetwork {
-  if (isDemoMode()) return "testnet";
   try {
     const v = localStorage.getItem(NET_KEY);
     if (v === "mainnet" || v === "testnet") return v;
@@ -52,17 +55,12 @@ function shortAddr(a: string): string {
 }
 
 /**
- * Router: inside Telegram, drop straight into the wallet. In a plain browser,
- * show the public landing page until the visitor chooses to launch the demo.
- * A pay deep-link (?startapp=pay_…) skips the landing too — someone following
- * a payment link wants the wallet, not marketing.
+ * Router — one rule, no exceptions: the wallet exists only inside Telegram,
+ * where a verified identity exists. Everything else sees the product page.
  */
 export function App() {
-  const [launched, setLaunched] = useState(
-    () => isInsideTelegram() || parsePayIntent(getStartParam() ?? "") !== null,
-  );
-  if (!launched) return <Landing onLaunch={() => setLaunched(true)} />;
-  return <WalletApp />;
+  if (isInsideTelegram() || FORCE_WALLET) return <WalletApp />;
+  return <Landing />;
 }
 
 function WalletApp() {
@@ -106,31 +104,21 @@ function WalletApp() {
   );
 
   /** Same key = same address on every network, so switching is instant. */
-  const doSwitch = useCallback(
-    (n: HederaNetwork) => {
-      walletRef.current?.switchNetwork(n);
-      try {
-        localStorage.setItem(NET_KEY, n);
-      } catch {
-        /* fine */
-      }
-      haptic("tap");
-      setIdentity((id) => (id ? { ...id, hederaAccountId: null } : id));
-      setNetwork(n);
-    },
-    [],
-  );
+  const doSwitch = useCallback((n: HederaNetwork) => {
+    walletRef.current?.switchNetwork(n);
+    try {
+      localStorage.setItem(NET_KEY, n);
+    } catch {
+      /* fine */
+    }
+    haptic("tap");
+    setIdentity((id) => (id ? { ...id, hederaAccountId: null } : id));
+    setNetwork(n);
+  }, []);
 
   const requestSwitch = useCallback(
     (n: HederaNetwork) => {
       if (n === network) return;
-      // No verified Telegram identity in a browser → no mainnet. The demo
-      // stays a harmless testnet sandbox.
-      if (n === "mainnet" && isDemoMode()) {
-        haptic("warning");
-        setAskMainnet(true); // shows the demo notice variant
-        return;
-      }
       let acked = false;
       try {
         acked = localStorage.getItem(MAINNET_ACK_KEY) === "yes";
@@ -146,10 +134,17 @@ function WalletApp() {
     [network, doSwitch],
   );
 
-  if (phase === "loading") return <Centered>Connecting…</Centered>;
+  if (phase === "loading")
+    return (
+      <Centered>
+        <Aperture size={56} />
+        <p className="muted">Opening your vault…</p>
+      </Centered>
+    );
   if (phase === "error")
     return (
       <Centered>
+        <Aperture size={56} />
         <h2>Couldn’t start</h2>
         <p className="muted">{error}</p>
         <p className="muted small">
@@ -164,23 +159,20 @@ function WalletApp() {
 
   return (
     <>
-      {askMainnet &&
-        (isDemoMode() ? (
-          <DemoMainnetNotice onClose={() => setAskMainnet(false)} />
-        ) : (
-          <MainnetGate
-            onConfirm={() => {
-              try {
-                localStorage.setItem(MAINNET_ACK_KEY, "yes");
-              } catch {
-                /* fine */
-              }
-              setAskMainnet(false);
-              doSwitch("mainnet");
-            }}
-            onCancel={() => setAskMainnet(false)}
-          />
-        ))}
+      {askMainnet && (
+        <MainnetGate
+          onConfirm={() => {
+            try {
+              localStorage.setItem(MAINNET_ACK_KEY, "yes");
+            } catch {
+              /* fine */
+            }
+            setAskMainnet(false);
+            doSwitch("mainnet");
+          }}
+          onCancel={() => setAskMainnet(false)}
+        />
+      )}
       <Dashboard
         key={network} /* remount per network: fresh balance/history/pollers */
         wallet={walletRef.current!}
@@ -196,31 +188,6 @@ function WalletApp() {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <div className="app centered">{children}</div>;
-}
-
-/** Shown when a browser (demo) visitor taps Mainnet: the real wallet — and
- * real money — belongs to the Telegram identity, not this sandbox. */
-function DemoMainnetNotice({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="card modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Mainnet lives in Telegram</h2>
-        <p className="muted small">
-          You’re in the <strong>browser demo</strong> — a testnet sandbox whose
-          keys exist only in this browser. Your <strong>real wallet</strong> is
-          secured by your <strong>Telegram identity</strong>, so mainnet (real
-          HBAR) is only available inside the Telegram Mini App.
-        </p>
-        <p className="muted small">
-          Here you can do everything risk-free with testnet HBAR: receive,
-          send, scan, export.
-        </p>
-        <button className="btn primary" onClick={onClose}>
-          Got it — stay on testnet
-        </button>
-      </div>
-    </div>
-  );
 }
 
 /** One-time, plain-words gate before the first mainnet switch. */
@@ -286,23 +253,19 @@ function UnlockScreen({
   };
 
   return (
-    <div className="app">
-      <Header network={loadSavedNetwork()} />
+    <div className="app unlock">
+      <div className="unlock-mark">
+        <Aperture size={84} hero />
+      </div>
+      <h1 className="unlock-title">
+        {isNew ? "Create your vault" : "Welcome back"}
+      </h1>
+      <p className="muted small unlock-sub">
+        {isNew
+          ? "Pick a password. It encrypts your key on this device — we never see it, and it can’t be recovered if lost."
+          : `${username ? "@" + username + " · " : ""}Enter your password to unlock.`}
+      </p>
       <div className="card">
-        <h2>
-          {isNew
-            ? isDemoMode()
-              ? "Create a demo wallet"
-              : "Create your wallet"
-            : "Unlock your wallet"}
-        </h2>
-        <p className="muted small">
-          {isNew
-            ? isDemoMode()
-              ? "A testnet sandbox that lives only in this browser. Pick a password — keys are encrypted locally and never leave this device."
-              : "Pick a password. It encrypts your key on this device — we never see it, and it can’t be recovered if lost."
-            : `Welcome back${username ? ", @" + username : ""}. Enter your password to unlock.`}
-        </p>
         <input
           className="input"
           type="password"
@@ -324,15 +287,14 @@ function UnlockScreen({
         )}
         {err && <p className="error">{err}</p>}
         <button className="btn primary" disabled={busy} onClick={submit}>
-          {busy ? "Working…" : isNew ? "Create wallet" : "Unlock"}
+          {busy ? "Working…" : isNew ? "Create vault" : "Unlock"}
         </button>
-        {isNew && (
-          <p className="muted xsmall">
-            🔒 Non-custodial: your private key is encrypted with Argon2id +
-            XChaCha20-Poly1305 and stored as ciphertext only.
-          </p>
-        )}
       </div>
+      {isNew && (
+        <p className="muted xsmall unlock-foot">
+          🔒 Non-custodial · Argon2id + XChaCha20-Poly1305 · ciphertext only
+        </p>
+      )}
     </div>
   );
 }
@@ -406,14 +368,6 @@ function Dashboard({
         </div>
       )}
 
-      {isDemoMode() && (
-        <div className="demo-strip">
-          Browser demo · testnet sandbox — this wallet lives only in this
-          browser. Your real wallet is in the Telegram app, unlocked by your
-          Telegram identity.
-        </div>
-      )}
-
       {freshWallet && !backupDone && (
         <div className="banner">
           <div>
@@ -440,21 +394,27 @@ function Dashboard({
         </div>
       )}
 
-      <div className="card balance-card">
-        <span className="muted small">Balance · {network}</span>
+      <section className="balance-hero">
+        <span className="balance-label">Balance · {network}</span>
         <div className="balance">{balance ? formatHbar(balance.hbar) : "…"} ℏ</div>
         {usd && <span className="muted small usd">{usd}</span>}
-        <a className="link small" href={wallet.accountUrl()} target="_blank" rel="noreferrer">
-          {identity.hederaAccountId ?? "Account auto-creates on first deposit"} ↗
+        <a className="acct-pill" href={wallet.accountUrl()} target="_blank" rel="noreferrer">
+          {identity.hederaAccountId ?? "auto-creates on first deposit"} ↗
         </a>
-      </div>
+      </section>
 
       <div className="tabs">
-        <button className={tab === "receive" ? "tab active" : "tab"} onClick={() => setTab("receive")}>
-          Receive
+        <button
+          className={tab === "receive" ? "tab active" : "tab"}
+          onClick={() => setTab("receive")}
+        >
+          <span className="tab-glyph in">↓</span> Receive
         </button>
-        <button className={tab === "send" ? "tab active" : "tab"} onClick={() => setTab("send")}>
-          Send
+        <button
+          className={tab === "send" ? "tab active" : "tab"}
+          onClick={() => setTab("send")}
+        >
+          <span className="tab-glyph out">↑</span> Send
         </button>
       </div>
 
@@ -494,13 +454,15 @@ function ReceiveTab({
   };
   return (
     <div className="card center">
-      <Qr value={identity.evmAddress} />
+      <div className="qr-frame">
+        <Qr value={identity.evmAddress} />
+      </div>
       <p className="muted small">Your address (EVM / Hedera alias)</p>
       <code className="addr" onClick={copy}>
         {identity.evmAddress}
       </code>
-      <button className="btn" onClick={copy}>
-        {copied ? "Copied!" : "Copy address"}
+      <button className="btn primary" onClick={copy}>
+        {copied ? "Copied ✓" : "Copy address"}
       </button>
       <p className="muted xsmall">
         Send {network} HBAR here. The first deposit auto-creates your Hedera
@@ -627,7 +589,7 @@ function SendTab({
           value={to}
           onChange={(e) => setTo(e.target.value)}
         />
-        {!isDemoMode() && canScanQr() && (
+        {canScanQr() && (
           <button className="btn scan" onClick={scan} title="Scan a QR code">
             ⌗
           </button>
@@ -670,11 +632,14 @@ function HistoryList({ items }: { items: HistoryItem[] }) {
           target="_blank"
           rel="noreferrer"
         >
+          <span className={it.direction === "in" ? "row-glyph in" : "row-glyph out"}>
+            {it.direction === "in" ? "↓" : "↑"}
+          </span>
           <span className={it.direction === "in" ? "amt in" : "amt out"}>
             {it.direction === "in" ? "+" : ""}
             {formatHbar(it.amount)} ℏ
           </span>
-          <span className="muted xsmall">
+          <span className="muted xsmall row-when">
             {new Date(it.timestamp).toLocaleString()}
           </span>
           <span className="link xsmall">↗</span>
@@ -728,8 +693,7 @@ function Header({
   return (
     <header className="header">
       <span className="logo">
-        ℏ OculusVault
-        {isDemoMode() && <span className="demo-chip">DEMO</span>}
+        <Aperture size={22} /> OculusVault
       </span>
       {onSwitch ? (
         <div className="netswitch" role="tablist" aria-label="Network">

@@ -1,13 +1,18 @@
 import "./landing.css";
+import { Aperture } from "./Aperture.js";
 
 const GITHUB = "https://github.com/jmgomezl/oculusvaultwallet";
+/** Set VITE_BOT_USERNAME once the BotFather bot exists — the Telegram CTAs go
+ * live automatically. Until then they show an honest "launching soon" state. */
+const BOT = import.meta.env.VITE_BOT_USERNAME ?? "";
+const TG_LINK = BOT ? `https://t.me/${BOT}/app` : null;
 
 /**
- * Public landing page for oculusvault.com — shown in a browser. Inside Telegram
- * the app skips straight to the wallet. The "Launch" actions call onLaunch,
- * which mounts the wallet flow.
+ * Public landing for oculusvault.com. The browser shows the product; the
+ * product itself lives in Telegram. No wallet runs here — the hero "wallet"
+ * is a self-playing mock that acts out the one-tap payout story.
  */
-export function Landing({ onLaunch }: { onLaunch: () => void }) {
+export function Landing() {
   return (
     <div className="lp">
       <div className="lp-grain" aria-hidden />
@@ -25,9 +30,7 @@ export function Landing({ onLaunch }: { onLaunch: () => void }) {
           <a href={GITHUB} target="_blank" rel="noreferrer">
             GitHub
           </a>
-          <button className="lp-btn lp-btn-sm" onClick={onLaunch}>
-            Launch
-          </button>
+          <TelegramCta size="sm" />
         </div>
       </nav>
 
@@ -45,9 +48,7 @@ export function Landing({ onLaunch }: { onLaunch: () => void }) {
             wallet, get paid in seconds.
           </p>
           <div className="lp-cta">
-            <button className="lp-btn lp-btn-lg" onClick={onLaunch}>
-              Try the demo <span className="lp-arrow">→</span>
-            </button>
+            <TelegramCta size="lg" />
             <a className="lp-btn lp-btn-ghost lp-btn-lg" href={GITHUB} target="_blank" rel="noreferrer">
               View the source
             </a>
@@ -58,19 +59,10 @@ export function Landing({ onLaunch }: { onLaunch: () => void }) {
         </div>
 
         <div className="lp-hero-art" aria-hidden>
-          <Aperture size={340} hero />
-          <div className="lp-chip lp-chip-1">
-            <span className="lp-chip-k">balance</span>
-            <span className="lp-chip-v">5.00000000 ℏ</span>
+          <div className="lp-orbit">
+            <Aperture size={520} hero />
           </div>
-          <div className="lp-chip lp-chip-2">
-            <span className="lp-chip-k">account</span>
-            <span className="lp-chip-v mono">0.0.9287437</span>
-          </div>
-          <div className="lp-chip lp-chip-3">
-            <span className="lp-chip-k">received</span>
-            <span className="lp-chip-v">＋5 ℏ ✓</span>
-          </div>
+          <WalletMock />
         </div>
       </header>
 
@@ -115,7 +107,7 @@ export function Landing({ onLaunch }: { onLaunch: () => void }) {
         </div>
         <div className="lp-cards">
           <Card icon="🔑" title="Keys on your device" body="Generated client-side and held only in memory while unlocked. The server never sees them." />
-          <Card icon="🛡️" title="Encrypted at rest" body="Argon2id + XChaCha20-Poly1305 over your key. Only ciphertext is stored — in Telegram CloudStorage." />
+          <Card icon="🛡️" title="Encrypted at rest" body="Argon2id + XChaCha20-Poly1305 over your key. Only ciphertext is stored — never the key itself." />
           <Card icon="🪪" title="Telegram authorizes" body="initData is HMAC-verified server-side. Your Telegram identity unlocks access — it’s never the seed." />
           <Card icon="🚪" title="Export anytime" body="Take your private key whenever you want. Self-custody you can actually walk away with." />
         </div>
@@ -127,7 +119,7 @@ export function Landing({ onLaunch }: { onLaunch: () => void }) {
         </h2>
         <div className="lp-feat">
           <Feat title="EVM-alias auto-create" body="Send HBAR to the wallet’s 0x address and Hedera creates the account on first receipt. No explicit account step." />
-          <Feat title="One key, two worlds" body="ECDSA secp256k1 means the same key is an EVM address and a Hedera account id." />
+          <Feat title="One key, two networks" body="ECDSA secp256k1 means the same address works on testnet and mainnet — switch inside the app." />
           <Feat title="Mirror Node history" body="Balances and transfers read straight from Hedera’s public Mirror Node — verifiable, no middleman." />
           <Feat title="Hashscan on everything" body="Every transaction links to a public Hashscan record. Proof, not promises." />
         </div>
@@ -140,12 +132,10 @@ export function Landing({ onLaunch }: { onLaunch: () => void }) {
             OculusVault is an <strong>open-source beta on Hedera testnet</strong>,
             built as an ecosystem contribution by a Hedera Developer Ambassador.
             It is <strong>not yet third-party audited</strong> — don’t trust it
-            with mainnet funds yet. Lost secret means lost wallet, by design.
+            with more than small amounts. Lost secret means lost wallet, by design.
           </p>
           <div className="lp-cta">
-            <button className="lp-btn lp-btn-lg" onClick={onLaunch}>
-              Open the testnet demo <span className="lp-arrow">→</span>
-            </button>
+            <TelegramCta size="lg" />
             <a className="lp-btn lp-btn-ghost lp-btn-lg" href={`${GITHUB}/blob/main/SECURITY.md`} target="_blank" rel="noreferrer">
               Read the security model
             </a>
@@ -165,6 +155,86 @@ export function Landing({ onLaunch }: { onLaunch: () => void }) {
           </a>
         </p>
       </footer>
+    </div>
+  );
+}
+
+/** Primary CTA: live t.me link once the bot exists, honest "soon" otherwise. */
+function TelegramCta({ size }: { size: "sm" | "lg" }) {
+  const cls = size === "lg" ? "lp-btn lp-btn-lg" : "lp-btn lp-btn-sm";
+  if (TG_LINK) {
+    return (
+      <a className={cls} href={TG_LINK} target="_blank" rel="noreferrer">
+        Open in Telegram <span className="lp-arrow">→</span>
+      </a>
+    );
+  }
+  return (
+    <span className={`${cls} lp-btn-soon`} title="The Telegram bot is almost ready">
+      <i className="lp-dot" /> Telegram — launching soon
+    </span>
+  );
+}
+
+/**
+ * The hero showpiece: a phone-sized wallet that plays the payout story on a
+ * loop — QR waiting → payment toast → balance lands → Hashscan proof.
+ * Pure CSS timeline, no state, decorative only.
+ */
+function WalletMock() {
+  return (
+    <div className="mock" role="img" aria-label="OculusVault wallet receiving 5 HBAR">
+      <div className="mock-head">
+        <span className="mock-brand">
+          <Aperture size={15} /> OculusVault
+        </span>
+        <span className="mock-net">TESTNET</span>
+      </div>
+
+      <div className="mock-balance">
+        <span className="mock-label">Balance</span>
+        <span className="mock-amount">
+          <span className="mock-zero">0 ℏ</span>
+          <span className="mock-five">5 ℏ</span>
+        </span>
+        <span className="mock-usd">≈ $1.15 USD</span>
+      </div>
+
+      <div className="mock-qr">
+        <MockQr />
+        <span className="mock-qr-hint">Scan to pay this wallet</span>
+      </div>
+
+      <div className="mock-toast">🎉 Received 5 ℏ</div>
+
+      <div className="mock-row">
+        <span className="mock-in">＋5 ℏ</span>
+        <span className="mock-row-sub">recycling machine · just now</span>
+        <span className="mock-proof">Hashscan ↗</span>
+      </div>
+    </div>
+  );
+}
+
+/** A QR-looking decorative grid (not a real code). */
+function MockQr() {
+  // Deterministic pseudo-random pattern so SSR/render is stable.
+  const cells: boolean[] = [];
+  let seed = 42;
+  for (let i = 0; i < 121; i++) {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    cells.push(seed % 100 < 46);
+  }
+  // Finder squares
+  const finder = (r: number, c: number) =>
+    (r < 3 && c < 3) || (r < 3 && c > 7) || (r > 7 && c < 3);
+  return (
+    <div className="mock-qr-grid">
+      {cells.map((on, i) => {
+        const r = Math.floor(i / 11);
+        const c = i % 11;
+        return <i key={i} className={finder(r, c) || on ? "on" : ""} />;
+      })}
     </div>
   );
 }
@@ -195,59 +265,5 @@ function Feat({ title, body }: { title: string; body: string }) {
       <h3>{title}</h3>
       <p>{body}</p>
     </div>
-  );
-}
-
-/** Concentric aperture / vault-eye mark. */
-function Aperture({ size, hero = false }: { size: number; hero?: boolean }) {
-  return (
-    <svg
-      className={hero ? "lp-aperture lp-aperture-hero" : "lp-aperture"}
-      width={size}
-      height={size}
-      viewBox="0 0 200 200"
-      fill="none"
-    >
-      <defs>
-        <linearGradient id="ap-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#7c5cff" />
-          <stop offset="1" stopColor="#00e0c6" />
-        </linearGradient>
-        <radialGradient id="ap-core" cx="0.5" cy="0.5" r="0.5">
-          <stop offset="0" stopColor="#00e0c6" stopOpacity="0.9" />
-          <stop offset="0.6" stopColor="#7c5cff" stopOpacity="0.45" />
-          <stop offset="1" stopColor="#7c5cff" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <circle cx="100" cy="100" r="92" stroke="url(#ap-g)" strokeWidth="1.5" opacity="0.55" />
-      <circle
-        className="lp-ring-dash"
-        cx="100"
-        cy="100"
-        r="74"
-        stroke="url(#ap-g)"
-        strokeWidth="2"
-        strokeDasharray="6 10"
-        opacity="0.8"
-      />
-      {hero &&
-        Array.from({ length: 6 }).map((_, i) => (
-          <line
-            key={i}
-            x1="100"
-            y1="100"
-            x2="100"
-            y2="38"
-            stroke="url(#ap-g)"
-            strokeWidth="6"
-            strokeLinecap="round"
-            opacity="0.5"
-            transform={`rotate(${i * 60} 100 100)`}
-          />
-        ))}
-      <circle cx="100" cy="100" r="46" fill="url(#ap-core)" />
-      <circle cx="100" cy="100" r="20" fill="#00e0c6" opacity="0.95" />
-      <circle cx="100" cy="100" r="20" stroke="#0a0b0f" strokeWidth="3" />
-    </svg>
   );
 }
