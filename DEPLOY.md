@@ -26,21 +26,24 @@ verification + sessions.
 ```
 HEDERA_NETWORK=testnet
 PORT=8787
-TELEGRAM_BOT_TOKEN=<your BotFather token>   # currently a placeholder
+TELEGRAM_BOT_TOKEN=<real BotFather token>    # @oculusvaultbot — verifies initData
 SESSION_SECRET=<32-byte random hex>
-ALLOW_DEV_AUTH=true                          # BETA: lets the site work in a browser
-CORS_ORIGIN=*
+ALLOW_DEV_AUTH=false                         # never true in production
+CORS_ORIGIN=https://oculusvault.com
 VAULT_DATA_DIR=./data                        # encrypted records (ciphertext only)
 # TELEGRAM_BOT_TOKENS={"kickoff":"…"}        # other apps that share the vault
 ```
 
-The shared vault persists encrypted records at `/opt/oculusvault/data/vault.json`
-(ciphertext only — back it up like any small datastore).
+Frontend build config lives in `apps/miniapp/.env.production` (on the build
+machine, gitignored): `VITE_API_BASE=https://api.oculusvault.com`,
+`VITE_HEDERA_NETWORK=testnet`, `VITE_BOT_USERNAME=oculusvaultbot` (makes the
+landing's "Open in Telegram" CTAs live).
 
-> ⚠️ **Beta status:** `ALLOW_DEV_AUTH=true` bypasses Telegram verification so the
-> site is demoable in a plain browser. Before treating this as real, set a real
-> `TELEGRAM_BOT_TOKEN`, set `ALLOW_DEV_AUTH=false`, and tighten `CORS_ORIGIN` to
-> `https://oculusvault.com`.
+The shared vault persists encrypted records at `/opt/oculusvault/data/vault.json`
+(ciphertext only — back it up like any small datastore). A browser visitor sees
+only the landing page; the wallet itself exists exclusively inside the Telegram
+Mini App, so the production posture is: dev-auth off, real bot token, CORS
+locked to the site origin.
 
 ## Redeploy
 

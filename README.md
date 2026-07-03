@@ -1,11 +1,18 @@
-# oculusvault
+# OculusVault
 
 A **non-custodial Hedera wallet inside a Telegram Mini App** — and a reusable
 SDK to drop the same wallet into any app. One tap gives a Telegram user a real
-Hedera account that can receive and send HBAR, with balance + history and a
-Hashscan proof for every transaction. **Testnet-first.** Apache-2.0 licensed.
+Hedera account that can receive and send HBAR, with balance + history, live USD
+estimates, and a Hashscan proof for every transaction. Testnet by default, with
+**mainnet behind an in-app switch and a plain-words safety gate** (same address
+on both networks). Apache-2.0 licensed.
 
-**Live (testnet beta):** [oculusvault.com](https://oculusvault.com) · API at `api.oculusvault.com`
+**Live (beta):** [oculusvault.com](https://oculusvault.com) · API at
+`api.oculusvault.com` · bot [@oculusvaultbot](https://t.me/oculusvaultbot)
+
+The interface follows **“The Engraved Note”** design language — the wallet as a
+document of value: paper, engraved ink, guilloché, stamps, and ledgers, instead
+of another dark crypto app.
 
 > Built by a Hedera Developer Ambassador as an open-source ecosystem
 > contribution. The driving use case: a recycling machine that pays people
@@ -36,10 +43,12 @@ threat model.
 ## Repository layout
 
 ```
-packages/sdk     @oculusvault/sdk  — the reusable library (the core)
-apps/server      thin backend: verifies initData, issues sessions, proxies Mirror Node
-apps/miniapp     demo Telegram Mini App (React + Vite)
+packages/sdk       @oculusvault/sdk — the reusable library (the core)
+apps/server        thin backend: verifies initData, shared vault, Mirror proxy
+apps/miniapp       the Mini App + the public landing page (React + Vite)
 scripts/payin.mjs  simulates the "machine" paying a wallet (auto-create demo)
+scripts/e2e.mjs    headless on-chain smoke test of the whole loop
+scripts/deploy.sh  build locally → ship to the server (see DEPLOY.md)
 ```
 
 ---
@@ -62,27 +71,31 @@ npm run dev:server         # http://localhost:8787
 npm run dev:miniapp        # http://localhost:5173
 ```
 
-### Browser = demo mode (by design)
+### The wallet lives only in Telegram (by design)
 
-Opened in a plain browser there is no Telegram identity, so the app runs as a
-**self-contained testnet sandbox**: keys live only in that browser
-(localStorage), mainnet is unavailable, a persistent DEMO badge explains the
-situation, and **no backend is needed at all**. The real wallet — shared vault,
-mainnet — exists only inside the Telegram Mini App, because the security model
-hangs off the server-verified Telegram identity.
+One rule, no exceptions: **a browser sees the product landing page; the wallet
+runs only inside the Telegram Mini App**, because the entire security model
+hangs off the server-verified Telegram identity. There is no browser wallet and
+no "demo wallet" — an unverified visitor can never create something that looks
+like a real wallet.
 
-`ALLOW_DEV_AUTH=true` remains available for **local backend development only**
-(it lets you exercise the vault API without a bot). Keep it `false` in
-production — it accepts unverified identities.
+For local development of the wallet UI in a browser, set
+`VITE_FORCE_WALLET=true` in `apps/miniapp/.env.development` (gitignored,
+dev-only; keys then live in that browser's localStorage). Similarly,
+`ALLOW_DEV_AUTH=true` on the backend is for **local development only** — it
+accepts unverified identities, so keep it `false` in production.
 
 ### Run it as a real Telegram Mini App
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) → copy the token into
    `TELEGRAM_BOT_TOKEN`.
-2. Host the Mini App somewhere HTTPS (or tunnel, e.g. `cloudflared`/`ngrok`) and
-   set that URL in BotFather: `/newapp` (or `/setmenubutton`).
-3. Point `VITE_API_BASE` at your deployed backend and set `ALLOW_DEV_AUTH=false`.
-4. Open the Mini App from the bot — you're authenticated via verified initData.
+2. Host the app somewhere HTTPS (or tunnel, e.g. `cloudflared`/`ngrok`) and
+   register the Mini App in BotFather: `/newapp` → your bot → that URL →
+   **short name `app`** (this exact name makes `t.me/<bot>/app` pay links work).
+3. Point `VITE_API_BASE` at your deployed backend, set
+   `VITE_BOT_USERNAME=<yourbot>` (turns the landing's "Open in Telegram" CTAs
+   live), and keep `ALLOW_DEV_AUTH=false`.
+4. Open `t.me/<yourbot>/app` — you're authenticated via verified initData.
 
 ---
 
@@ -176,10 +189,11 @@ const verified = verifyTelegramInitData(initData, process.env.TELEGRAM_BOT_TOKEN
 | `new OculusVault({ network, keyProvider, storageNamespace? })` | Construct a wallet. |
 | `hasWallet(userId)` | Whether a wallet exists for this user (create-vs-unlock). |
 | `createOrRecoverWallet({ userId, secret })` → `{ evmAddress, hederaAccountId }` | Provision or unlock. |
-| `getBalance(idOrEvm?)` → `{ hbar, tinybar, usdEstimate }` | Balance via Mirror Node. |
+| `getBalance(idOrEvm?)` → `{ hbar, tinybar, usdEstimate }` | Balance via Mirror Node; USD from the network's own exchange-rate file (5-min cache). |
 | `getHistory(idOrEvm?)` → `HistoryItem[]` | Transfer history with Hashscan links. |
 | `send(to, amountHbar, memo?)` → `{ txId, hashscanUrl, status }` | Send HBAR (to 0x or 0.0.x). |
 | `onIncoming(cb, opts?)` → `unsubscribe` | Poll Mirror Node, fire on new credits. |
+| `switchNetwork(network)` | Instant testnet ⇄ mainnet switch — same key, same 0x address on every network; the per-network account id re-resolves lazily. |
 | `refreshAccountId()` | Re-check whether the account is auto-created yet. |
 | `exportKey()` → `privateKeyHex` | Reveal the raw key (self-custody proof). |
 | `lock()` | Wipe in-memory key material. |
@@ -187,7 +201,10 @@ const verified = verifyTelegramInitData(initData, process.env.TELEGRAM_BOT_TOKEN
 Lower-level building blocks are also exported: `MirrorClient`, `sendHbar`,
 `generateKey` / `fromPrivateKey`, `encryptPrivateKey` / `decryptPrivateKey`,
 `registerPasskeySecret` / `getPasskeySecret`, `getNetworkConfig`,
-`hashscanTxUrl`, and the `KeyProvider` interface.
+`hashscanTxUrl`, the `KeyProvider` / `Storage` interfaces,
+`RemoteVaultStorage` (shared vault), the pay-intent protocol
+(`parsePayIntent` / `buildPayParam` / `buildPayLink`), and Telegram helpers
+(`getStartParam`, `scanQr`, `canScanQr`, `haptic`).
 
 ## One wallet across many apps (shared vault)
 
@@ -283,8 +300,11 @@ same interface and pass it to `OculusVault` — nothing else changes.
 
 ## Scope (v1)
 
-- ✅ HBAR send/receive, balance, history, auto-create, export, incoming-watch.
-- 🚫 **No mainnet by default** (testnet-first; the network is a config switch).
+- ✅ HBAR send/receive, balance + USD, history, auto-create, export,
+  incoming-watch, pay links / QR scan, shared cross-app vault.
+- ✅ **Mainnet behind guardrails**: testnet by default; switching to mainnet
+  requires a one-time, plain-words confirmation (real HBAR, unaudited beta,
+  keep small amounts, back up first). Same address on both networks.
 - 🚫 **No HTS tokens** in v1 — HBAR needs no association. HTS is a clean
   extension (associate, then transfer through the same `KeyProvider`).
 - 🚫 No swaps, DeFi, or fiat on-ramp.
@@ -296,8 +316,13 @@ same interface and pass it to `OculusVault` — nothing else changes.
 ```bash
 npm run build        # build the SDK
 npm run typecheck    # typecheck all workspaces
-npm test --workspace @oculusvault/sdk   # crypto + initData tests
+npm test --workspace @oculusvault/sdk      # crypto, initData, pay-intent, network tests
+npm test --workspace @oculusvault/server   # shared-vault integration tests
+npm run e2e          # live on-chain smoke test (needs a funded testnet operator)
 ```
+
+CI runs build + typecheck + both test suites on every push and PR. See
+[DEPLOY.md](./DEPLOY.md) for the production setup.
 
 ## License
 

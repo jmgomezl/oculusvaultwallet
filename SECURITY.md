@@ -43,15 +43,25 @@ The stored record contains only: version, public EVM address, KDF params
 (salt + costs), nonce, ciphertext, secret source, timestamp. It is asserted in
 tests that the plaintext key never appears in the record.
 
-## Demo mode vs real mode
+## Where the wallet can exist
 
-In a plain browser there is no Telegram identity, so the app becomes a
-**demo**: a testnet-only sandbox whose keys live solely in that browser's
-localStorage — clearly labeled, mainnet disabled, and never touching the
-shared vault (which is keyed by verified Telegram ids). The real wallet exists
-only inside the Telegram Mini App. This is deliberate: an unverified browser
-visitor must not be able to create something that looks like a production
-wallet.
+**The wallet runs only inside the Telegram Mini App.** A plain browser sees the
+product landing page and nothing else — no wallet UI, no key generation, even
+when following a pay deep-link. This is deliberate: the security model hangs
+off the server-verified Telegram identity, so an unverified browser visitor
+must never be able to create something that looks like a real wallet.
+(`VITE_FORCE_WALLET=true` exists as a gitignored, local-development-only
+escape hatch for working on the wallet UI.)
+
+## Mainnet guardrails
+
+The same secp256k1 key — and therefore the same 0x address — is valid on
+every Hedera network; only the per-network account id differs. The app is
+testnet by default. Switching to mainnet requires a one-time, plain-words
+confirmation (real HBAR, unaudited beta, keep small amounts, back up first),
+the acknowledgment is remembered, and mainnet mode is visually distinct (gold
+ink, persistent warning strip); the send-confirmation screen states
+"mainnet — real HBAR" explicitly.
 
 ## Telegram authentication
 
@@ -107,6 +117,11 @@ valid         = timingSafeEqual(expected_hash, provided_hash)
   Subresource Integrity for the Telegram script in production).
 
 ## Production hardening checklist
+
+Already built into the server: per-IP rate limiting on auth and vault writes,
+security headers (`nosniff`, `X-Frame-Options: DENY`, no-referrer), vault
+records validated to be encrypted and size-capped, `x-powered-by` disabled.
+Still on you when deploying:
 
 - [ ] `ALLOW_DEV_AUTH=false`.
 - [ ] Strong random `SESSION_SECRET`.
