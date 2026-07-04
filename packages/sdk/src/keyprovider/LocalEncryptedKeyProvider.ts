@@ -19,6 +19,7 @@ import { fromPrivateKey, generateKey } from "../crypto/keys.js";
 import type { Storage } from "../storage/Storage.js";
 import type { EncryptedWalletRecord } from "../types.js";
 import type {
+  ImportArgs,
   KeyProvider,
   ProvisionArgs,
   RecoverArgs,
@@ -71,6 +72,29 @@ export class LocalEncryptedKeyProvider implements KeyProvider {
   async exportPrivateKey(args: RecoverArgs): Promise<string> {
     const record = await this.requireRecord(args.storageKey);
     return decryptPrivateKey(record, args.secret);
+  }
+
+  /**
+   * Forgot-password recovery / key import: validate the supplied key,
+   * encrypt it with the NEW secret, and REPLACE the stored record. Callers
+   * should compare getStoredAddress() first and warn if this would swap in a
+   * different wallet.
+   */
+  async importPrivateKey(args: ImportArgs): Promise<WalletKeyMaterial> {
+    const key = fromPrivateKey(args.privateKeyHex); // throws on malformed keys
+    const record = await encryptPrivateKey({
+      privateKeyHex: key.privateKeyHex,
+      evmAddress: key.evmAddress,
+      secret: args.secret,
+      kdf: args.kdf,
+    });
+    await this.storage.setItem(args.storageKey, JSON.stringify(record));
+    return { evmAddress: key.evmAddress, privateKeyHex: key.privateKeyHex };
+  }
+
+  /** Public address of the stored record (no secret needed), or null. */
+  async getStoredAddress(storageKey: string): Promise<string | null> {
+    return (await this.load(storageKey))?.evmAddress ?? null;
   }
 
   async remove(storageKey: string): Promise<void> {

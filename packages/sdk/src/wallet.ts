@@ -132,6 +132,42 @@ export class OculusVault {
     return this.getIdentity();
   }
 
+  /** Public address of the stored record without needing the secret — lets a
+   * recovery UI warn before replacing a different wallet. */
+  async storedAddress(userId: string | number): Promise<string | null> {
+    if (!this.keyProvider.getStoredAddress) return null;
+    return this.keyProvider.getStoredAddress(this.storageKey(userId));
+  }
+
+  /**
+   * Forgot-password recovery / import: restore the wallet from a backed-up
+   * private key, encrypting it with a NEW secret and replacing the stored
+   * record, then unlock. Compare storedAddress() first to warn the user if
+   * the supplied key belongs to a different wallet than the stored one.
+   */
+  async importWallet(args: {
+    userId: string | number;
+    privateKeyHex: string;
+    secret: UserSecret;
+  }): Promise<WalletIdentity> {
+    if (!this.keyProvider.importPrivateKey) {
+      throw new Error("This key provider does not support key import");
+    }
+    const material = await this.keyProvider.importPrivateKey({
+      storageKey: this.storageKey(args.userId),
+      privateKeyHex: args.privateKeyHex,
+      secret: args.secret,
+    });
+    if (!material.privateKeyHex) {
+      throw new Error("KeyProvider returned no private key");
+    }
+    this.privateKeyHex = material.privateKeyHex;
+    this.evmAddress = material.evmAddress;
+    this.userId = String(args.userId);
+    await this.refreshAccountId();
+    return this.getIdentity();
+  }
+
   /**
    * Unlock directly with a raw private key (e.g. a key restored from a
    * short-lived session cache, or an imported key). Does NOT touch storage.

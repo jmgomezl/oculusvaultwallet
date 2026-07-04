@@ -14,7 +14,7 @@ import {
   type PayIntent,
   type WalletIdentity,
 } from "@oculusvault/sdk";
-import { buildPayLink, openTelegramLink } from "@oculusvault/sdk";
+import { buildPayLink, openTelegramLink, fromPrivateKey } from "@oculusvault/sdk";
 import { authenticate, isDemoMode, type AuthResult } from "./api.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
@@ -77,6 +77,8 @@ function WalletApp() {
   const [identity, setIdentity] = useState<WalletIdentity | null>(null);
   const [network, setNetwork] = useState<HederaNetwork>(loadSavedNetwork);
   const [askMainnet, setAskMainnet] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [storedAddr, setStoredAddr] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -103,6 +105,28 @@ function WalletApp() {
       });
       haptic("success");
       setIdentity(id);
+      setPhase("ready");
+    },
+    [auth],
+  );
+
+  const startRecover = useCallback(async () => {
+    if (!walletRef.current || !auth) return;
+    setStoredAddr(await walletRef.current.storedAddress(auth.userId));
+    setRecovering(true);
+  }, [auth]);
+
+  const onRestore = useCallback(
+    async (privateKeyHex: string, newPassword: string) => {
+      if (!walletRef.current || !auth) return;
+      const id = await walletRef.current.importWallet({
+        userId: auth.userId,
+        privateKeyHex,
+        secret: { source: "password", value: newPassword },
+      });
+      haptic("success");
+      setIdentity(id);
+      setRecovering(false);
       setPhase("ready");
     },
     [auth],
@@ -157,10 +181,24 @@ function WalletApp() {
         </p>
       </Centered>
     );
-  if (phase === "locked")
+  if (phase === "locked") {
+    if (recovering)
+      return (
+        <RecoverScreen
+          existingAddress={storedAddr}
+          onRestore={onRestore}
+          onBack={() => setRecovering(false)}
+        />
+      );
     return (
-      <UnlockScreen isNew={isNew} username={auth?.user.username} onUnlock={onUnlock} />
+      <UnlockScreen
+        isNew={isNew}
+        username={auth?.user.username}
+        onUnlock={onUnlock}
+        onRecover={startRecover}
+      />
     );
+  }
 
   return (
     <>
@@ -232,10 +270,12 @@ function UnlockScreen({
   isNew,
   username,
   onUnlock,
+  onRecover,
 }: {
   isNew: boolean;
   username?: string;
   onUnlock: (pw: string) => Promise<void>;
+  onRecover: () => void;
 }) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -294,12 +334,152 @@ function UnlockScreen({
         <button className="btn primary" disabled={busy} onClick={submit}>
           {busy ? "Working…" : isNew ? "Create vault" : "Unlock"}
         </button>
+        <button className="linklike unlock-recover" onClick={onRecover}>
+          {isNew
+            ? "Already have a key? Import it instead"
+            : "Forgot password? Restore from your backed-up key"}
+        </button>
       </div>
       {isNew && (
         <p className="muted xsmall unlock-foot">
           🔒 Non-custodial · Argon2id + XChaCha20-Poly1305 · ciphertext only
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Forgot-password recovery / key import. The pasted key's address is derived
+ * live so the user can confirm it's the right wallet BEFORE anything is
+ * written; replacing a different stored wallet requires an explicit opt-in.
+ */
+function RecoverScreen({
+  existingAddress,
+  onRestore,
+  onBack,
+}: {
+  existingAddress: string | null;
+  onRestore: (privateKeyHex: string, newPassword: string) => Promise<void>;
+  onBack: () => void;
+}) {
+  const [keyIn, setKeyIn] = useState("");
+  const [pw, setPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [replaceOk, setReplaceOk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const cleaned = keyIn.trim().replace(/^0x/i, "");
+  const validKey = /^[0-9a-fA-F]{64}$/.test(cleaned);
+  let derived: string | null = null;
+  if (validKey) {
+    try {
+      derived = fromPrivateKey(cleaned).evmAddress;
+    } catch {
+      derived = null;
+    }
+  }
+  const mismatch =
+    derived != null &&
+    existingAddress != null &&
+    derived.toLowerCase() !== existingAddress.toLowerCase();
+
+  const submit = async () => {
+    setErr("");
+    if (!derived) return setErr("Paste your 64-character private key (with or without 0x).");
+    if (pw.length < 8) return setErr("Use at least 8 characters for the new password.");
+    if (pw !== confirm) return setErr("Passwords don’t match.");
+    if (mismatch && !replaceOk) {
+      return setErr("Confirm the replacement checkbox to continue.");
+    }
+    setBusy(true);
+    try {
+      await onRestore(cleaned, pw);
+    } catch (e) {
+      haptic("error");
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="app unlock">
+      <div className="unlock-mark">
+        <Aperture size={72} hero />
+      </div>
+      <h1 className="unlock-title">Restore your vault</h1>
+      <p className="muted small unlock-sub">
+        Paste the private key you backed up. It never leaves this device — we
+        re-encrypt it with a new password of your choice.
+      </p>
+      <div className="card">
+        <input
+          className="input mono"
+          placeholder="Private key (64 hex characters)"
+          value={keyIn}
+          autoFocus
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(e) => setKeyIn(e.target.value)}
+        />
+        {derived && (
+          <p className={mismatch ? "error xsmall" : "success xsmall"}>
+            {mismatch ? (
+              <>
+                ⚠️ This key belongs to <code>{shortAddr(derived)}</code> — but
+                your stored vault is <code>{shortAddr(existingAddress!)}</code>.
+                Restoring will REPLACE the stored wallet.
+              </>
+            ) : (
+              <>✓ Key recognised — wallet {shortAddr(derived)}</>
+            )}
+          </p>
+        )}
+        {mismatch && (
+          <label className="replace-check">
+            <input
+              type="checkbox"
+              checked={replaceOk}
+              onChange={(e) => setReplaceOk(e.target.checked)}
+            />
+            <span>
+              I understand this replaces the stored wallet. Without its key or
+              password, the old wallet becomes unrecoverable.
+            </span>
+          </label>
+        )}
+        <input
+          className="input"
+          type="password"
+          placeholder="New password"
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+        />
+        <input
+          className="input"
+          type="password"
+          placeholder="Confirm new password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+        />
+        {err && <p className="error">{err}</p>}
+        <button
+          className="btn primary"
+          disabled={busy || !validKey || !pw || !confirm}
+          onClick={submit}
+        >
+          {busy ? "Restoring…" : "Restore vault"}
+        </button>
+        <button className="btn ghost" disabled={busy} onClick={onBack}>
+          Back
+        </button>
+      </div>
+      <p className="muted xsmall unlock-foot">
+        🔒 The key is encrypted on-device · only ciphertext is stored
+      </p>
     </div>
   );
 }
@@ -545,8 +725,8 @@ function Dashboard({
           <div>
             <strong>Back up your key.</strong>
             <span className="muted small">
-              {" "}If you lose your password there is no recovery — export your
-              key once and store it somewhere safe.
+              {" "}Your backed-up key is the ONLY way back in if you forget
+              your password — export it once and store it somewhere safe.
             </span>
           </div>
           <div className="banner-actions">

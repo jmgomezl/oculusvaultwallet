@@ -27,6 +27,15 @@ export interface RecoverArgs {
   secret: UserSecret;
 }
 
+export interface ImportArgs {
+  storageKey: string;
+  /** The raw private key the user backed up (hex, with or without 0x). */
+  privateKeyHex: string;
+  /** The NEW secret to encrypt it with. */
+  secret: UserSecret;
+  kdf?: Omit<KdfParams, "salt">;
+}
+
 /**
  * Swappable key-management strategy. The shipped default is
  * LocalEncryptedKeyProvider (self-custodial, vendor-free). Alternative
@@ -44,6 +53,15 @@ export interface KeyProvider {
   /** Export the raw private key (self-custody proof). Optional for remote
    * providers that cannot reveal a key. */
   exportPrivateKey?(args: RecoverArgs): Promise<string>;
+  /**
+   * Restore a wallet from a user-supplied private key (forgot-password
+   * recovery / import), encrypting it with a NEW secret and REPLACING any
+   * stored record. Optional for remote providers.
+   */
+  importPrivateKey?(args: ImportArgs): Promise<WalletKeyMaterial>;
+  /** The stored record's public address without needing the secret — lets a
+   * recovery UI warn before replacing a different wallet. */
+  getStoredAddress?(storageKey: string): Promise<string | null>;
   /** Delete the stored record for this user. */
   remove(storageKey: string): Promise<void>;
 }

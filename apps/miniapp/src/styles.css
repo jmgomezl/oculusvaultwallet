@@ -270,6 +270,35 @@ a.chip {
   letter-spacing: 0.05em;
 }
 
+/* recovery */
+.unlock-recover {
+  align-self: center;
+  font-size: 13px;
+  margin-top: 2px;
+}
+.input.mono {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.replace-check {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--red);
+  padding: 10px 12px;
+  border: 1.5px dashed var(--red);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.replace-check input {
+  margin-top: 2px;
+  accent-color: var(--red);
+}
+
 /* request-a-payment */
 .req-actions {
   display: flex;

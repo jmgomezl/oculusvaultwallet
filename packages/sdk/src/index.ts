@@ -33,6 +33,7 @@ export type {
   WalletKeyMaterial,
   ProvisionArgs,
   RecoverArgs,
+  ImportArgs,
 } from "./keyprovider/KeyProvider.js";
 export { LocalEncryptedKeyProvider } from "./keyprovider/LocalEncryptedKeyProvider.js";
 
