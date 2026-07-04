@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — OculusVault</title>
+  <link href="https://api.fontshare.com/v2/css?f[]=zodiak@400,700,900&f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root{--paper:#f5f1e6;--paper-2:#ede7d6;--ink:#1c1a14;--ink-2:#57523f;--rule:rgba(28,26,20,.28);--green:#1d5c45}
+    *{box-sizing:border-box;margin:0}
+    body{background:var(--paper);color:var(--ink);font-family:"Satoshi",system-ui,sans-serif;line-height:1.6;padding:48px 20px 80px}
+    main{max-width:760px;margin:0 auto}
+    h1{font-family:"Zodiak",serif;font-weight:900;font-size:40px;letter-spacing:-.01em;margin-bottom:4px}
+    .meta{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.06em;color:var(--ink-2);margin-bottom:28px}
+    h2{font-family:"Zodiak",serif;font-weight:700;font-size:22px;margin:34px 0 8px;padding-top:18px;border-top:1px solid var(--rule)}
+    p,li{color:var(--ink);font-size:16px}
+    ul{margin:8px 0 0 22px;display:flex;flex-direction:column;gap:6px}
+    strong{color:var(--ink)}
+    a{color:var(--green)}
+    .lead{font-size:18px;color:var(--ink-2);margin-top:8px}
+    code{font-family:"JetBrains Mono",monospace;font-size:14px}
+    footer{margin-top:40px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink-2)}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Privacy Policy</h1>
+    <div class="meta">OculusVault · effective 2026-07-04</div>
+    <p class="lead">
+      OculusVault is a non-custodial Hedera wallet delivered as a Telegram Mini App
+      and a Chrome extension. It is designed so that we collect as little as possible
+      and never hold your keys. This policy explains exactly what is and isn't handled.
+    </p>
+
+    <h2>The short version</h2>
+    <ul>
+      <li>Your <strong>private keys are generated and encrypted on your device</strong>. We only ever store the encrypted ciphertext — we cannot read your keys.</li>
+      <li>We do <strong>not sell or transfer your data</strong> to third parties.</li>
+      <li>We do <strong>not use analytics, advertising, or tracking</strong>.</li>
+      <li>The only personal data we handle is your <strong>Telegram user id</strong>, used solely to authenticate you and locate your encrypted wallet record.</li>
+    </ul>
+
+    <h2>What we collect</h2>
+    <ul>
+      <li><strong>Authentication information:</strong> your Telegram user id (and, if present, username), obtained through Telegram's official, cryptographically-signed sign-in (Mini App <code>initData</code> or the Telegram Login Widget) and verified on our server.</li>
+      <li><strong>Your encrypted wallet record:</strong> the ciphertext produced when your private key is encrypted on your device with your password. It is stored server-side keyed by your Telegram user id so your wallet can follow you across our apps. It contains no readable key material.</li>
+    </ul>
+    <p>We do <strong>not</strong> collect your password, your private key, your name, email, location, browsing history, or contacts.</p>
+
+    <h2>How we use it</h2>
+    <ul>
+      <li>To verify your Telegram identity and issue a short-lived session so you can access your wallet.</li>
+      <li>To store and return your encrypted wallet record (which only you can decrypt).</li>
+      <li>Public Hedera network endpoints (Mirror Node, RPC relays) are contacted to read balances and history and to submit the transactions you initiate. These requests include your public account address only.</li>
+    </ul>
+
+    <h2>What we never do</h2>
+    <ul>
+      <li>We never see, store, or transmit your private key or password in any readable form.</li>
+      <li>We never sell, rent, or share your data with third parties.</li>
+      <li>We never use your data for advertising, profiling, or any purpose unrelated to operating the wallet.</li>
+    </ul>
+
+    <h2>Chrome extension permissions</h2>
+    <ul>
+      <li><code>storage</code> — stores your session token and preferences; an unlocked key is held only in memory-backed session storage and cleared when the browser closes.</li>
+      <li>Host access to <code>api.oculusvault.com</code> — our backend, for sign-in verification and your encrypted record.</li>
+      <li>Host access to Hedera endpoints (<code>*.hedera.com</code>, <code>*.hashio.io</code>) — reading balances/history and submitting your transactions.</li>
+    </ul>
+    <p>The extension contains no remote code; all logic is bundled and open-source.</p>
+
+    <h2>Data retention &amp; deletion</h2>
+    <p>
+      Your encrypted wallet record persists so you can keep using your wallet. You control it:
+      removing it from within the app (or contacting us) deletes the stored ciphertext. Because the
+      wallet is non-custodial, deleting the record does not delete your funds — your key (which you
+      alone hold) always controls the on-chain account.
+    </p>
+
+    <h2>Security</h2>
+    <p>
+      Keys are encrypted with Argon2id + XChaCha20-Poly1305 before leaving your device. Sign-in is
+      verified server-side via HMAC. The server is rate-limited and transmits over HTTPS. The full
+      security model is documented at
+      <a href="https://github.com/jmgomezl/oculusvaultwallet/blob/main/SECURITY.md">SECURITY.md</a>.
+    </p>
+
+    <h2>Open source</h2>
+    <p>
+      Every line is public under Apache-2.0 at
+      <a href="https://github.com/jmgomezl/oculusvaultwallet">github.com/jmgomezl/oculusvaultwallet</a>.
+      You can verify these claims in the code.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions or data-deletion requests: open an issue at
+      <a href="https://github.com/jmgomezl/oculusvaultwallet/issues">github.com/jmgomezl/oculusvaultwallet/issues</a>.
+    </p>
+
+    <footer>OculusVault · non-custodial · open-source (Apache-2.0) · oculusvault.com</footer>
+  </main>
+</body>
+</html>
