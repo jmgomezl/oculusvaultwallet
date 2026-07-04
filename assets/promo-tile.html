@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OculusVault promo tiles</title>
+<link href="https://api.fontshare.com/v2/css?f[]=zodiak@400,700,900&f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{--paper:#f5f1e6;--paper-2:#ede7d6;--ink:#1c1a14;--ink-2:#57523f;
+    --rule:rgba(28,26,20,.28);--rule-soft:rgba(28,26,20,.14);--green:#1d5c45;--red:#b3391f}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--paper);font-family:"Satoshi",system-ui,sans-serif;color:var(--ink);overflow:hidden;position:relative}
+  .grain{position:fixed;inset:0;opacity:.05;pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+  .rosette{color:var(--green)}
+
+  /* small 440×280 */
+  body.small{width:440px;height:280px}
+  .small .tile{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px}
+  .small .name{font-family:"Zodiak",serif;font-weight:900;font-size:38px;letter-spacing:-.01em}
+  .small .tag{font-family:"Zodiak",serif;font-style:italic;font-size:15.5px;color:var(--ink-2)}
+  .small .foot{position:absolute;bottom:12px;left:0;right:0;text-align:center;font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.14em;color:var(--ink-2);text-transform:uppercase}
+
+  /* marquee 1400×560 */
+  body.marquee{width:1400px;height:560px}
+  .marquee .tile{position:absolute;inset:0;display:grid;grid-template-columns:1.1fr .9fr;align-items:center;padding:0 90px;gap:40px}
+  .marquee h1{font-family:"Zodiak",serif;font-weight:900;font-size:66px;line-height:1;letter-spacing:-.015em}
+  .marquee h1 em{font-style:italic;color:var(--green)}
+  .marquee .sub{margin-top:20px;font-size:21px;line-height:1.5;color:var(--ink-2);max-width:26em}
+  .marquee .brand{position:absolute;top:36px;left:90px;display:flex;align-items:center;gap:11px;font-family:"Zodiak",serif;font-weight:700;font-size:22px}
+  .marquee .foot{position:absolute;bottom:30px;left:90px;font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.08em;color:var(--ink-2)}
+  .note{position:relative;width:470px;aspect-ratio:2.2/1;padding:7px;transform:rotate(-2.5deg);
+    background:radial-gradient(120% 160% at 20% 30%,rgba(29,92,69,.07),transparent 55%),var(--paper-2);
+    border:1.5px solid var(--ink);border-radius:6px;box-shadow:7px 8px 0 rgba(28,26,20,.16)}
+  .inner{height:100%;border:1px solid var(--rule);border-radius:3px;display:flex;flex-direction:column;overflow:hidden}
+  .micro{font-family:"JetBrains Mono",monospace;font-size:5.5px;letter-spacing:.18em;color:var(--ink-2);white-space:nowrap;overflow:hidden;padding:2px 6px;border-bottom:1px solid var(--rule-soft);opacity:.9}
+  .micro:last-child{border-bottom:0;border-top:1px solid var(--rule-soft)}
+  .bodyrow{position:relative;flex:1;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px;padding:8px 16px 8px 10px}
+  .face{display:flex;flex-direction:column;align-items:flex-end;text-align:right;gap:2px}
+  .issuer{font-family:"Zodiak",serif;font-weight:700;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+  .denom{font-family:"Zodiak",serif;font-weight:900;font-size:56px;line-height:1}
+  .denom i{font-style:normal;color:var(--green)}
+  .payline{font-family:"Zodiak",serif;font-style:italic;font-size:12.5px;color:var(--ink-2)}
+  .serial{margin-top:4px;font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.14em;color:var(--red)}
+  .specimen{position:absolute;inset:0;display:grid;place-items:center;font-family:"Zodiak",serif;font-weight:900;font-size:46px;letter-spacing:.28em;text-transform:uppercase;color:rgba(28,26,20,.07);transform:rotate(-8deg)}
+  .rstamp{position:absolute;right:-20px;top:-26px;display:flex;flex-direction:column;align-items:center;gap:1px;
+    padding:11px 17px;border:3px double var(--red);border-radius:10px;color:var(--red);font-weight:800;font-size:11px;
+    text-transform:uppercase;letter-spacing:.2em;background:rgba(245,241,230,.35);transform:rotate(9deg);opacity:.92}
+  .rstamp b{font-family:"Zodiak",serif;font-weight:900;font-size:22px}
+</style>
+</head>
+<body>
+  <div class="grain"></div>
+  <div id="root"></div>
+  <script>
+    function rosette(size, petals) {
+      var p = "";
+      var n = petals || 36;
+      for (var i = 0; i < n; i++) p += '<ellipse cx="100" cy="100" rx="86" ry="30" transform="rotate(' + (i * 180 / n) + ' 100 100)"/>';
+      return '<svg class="rosette" width="' + size + '" height="' + size + '" viewBox="0 0 200 200" fill="none">' +
+        '<g stroke="currentColor" stroke-width="0.8" opacity="0.85">' + p + '</g>' +
+        '<circle cx="100" cy="100" r="88" stroke="currentColor" stroke-width="1.4"/>' +
+        '<circle cx="100" cy="100" r="62" stroke="currentColor" stroke-width="1.4"/>' +
+        '<circle cx="100" cy="100" r="96" stroke="currentColor" stroke-width="0.8" stroke-dasharray="1.5 3"/>' +
+        '<circle cx="100" cy="100" r="13" fill="currentColor"/>' +
+        '<circle cx="100" cy="100" r="20" stroke="currentColor" stroke-width="1.4"/></svg>';
+    }
+    var mode = new URLSearchParams(location.search).get("t") || "small";
+    document.body.className = mode;
+    var root = document.getElementById("root");
+    if (mode === "small") {
+      root.innerHTML = '<div class="tile">' + rosette(92, 24) +
+        '<div class="name">OculusVault</div>' +
+        '<div class="tag">Money that lives in a chat — the Hedera wallet anchored to Telegram.</div>' +
+        '<div class="foot">non-custodial · open source</div></div>';
+    } else {
+      root.innerHTML =
+        '<div class="tile"><div>' +
+        '<h1>Money that lives<br/>in a <em>chat</em>.</h1>' +
+        '<p class="sub">The non-custodial Hedera wallet anchored to your Telegram identity — now on your desktop. Same vault, same address, keys that never leave your device.</p>' +
+        '</div><div style="display:grid;place-items:center">' +
+        '<div class="note"><div class="inner">' +
+        '<div class="micro">NON·CUSTODIAL — KEYS NEVER LEAVE YOUR DEVICE — HEDERA — OCULUSVAULT — NON·CUSTODIAL — KEYS NEVER LEAVE YOUR DEVICE —</div>' +
+        '<div class="bodyrow">' + rosette(150) +
+        '<div class="face"><span class="issuer">OculusVault · Hedera Network</span>' +
+        '<span class="denom">5 <i>ℏ</i></span><span class="payline">pays the bearer on scan</span>' +
+        '<span class="serial">Nº OV-0000001 · testnet</span></div><div class="specimen">Specimen</div></div>' +
+        '<div class="micro">NON·CUSTODIAL — KEYS NEVER LEAVE YOUR DEVICE — HEDERA — OCULUSVAULT — NON·CUSTODIAL — KEYS NEVER LEAVE YOUR DEVICE —</div>' +
+        '</div><div class="rstamp">Received<b>+5 ℏ</b></div></div>' +
+        '</div></div>' +
+        '<div class="brand">' + rosette(28, 12) + ' OculusVault</div>' +
+        '<div class="foot">oculusvault.com · apache-2.0 · hedera network</div>';
+    }
+  </script>
+</body>
+</html>
