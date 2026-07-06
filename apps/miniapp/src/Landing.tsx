@@ -6,6 +6,10 @@ const GITHUB = "https://github.com/jmgomezl/oculusvaultwallet";
  * live automatically. Until then they show an honest "launching soon" state. */
 const BOT = import.meta.env.VITE_BOT_USERNAME ?? "";
 const TG_LINK = BOT ? `https://t.me/${BOT}/app` : null;
+/** Set VITE_CWS_URL to the Chrome Web Store listing once the extension clears
+ * review — the desktop CTAs go live automatically. Until then they show an
+ * honest "in review" state. */
+const CWS_URL = import.meta.env.VITE_CWS_URL ?? "";
 
 const MICRO =
   "NON·CUSTODIAL — KEYS NEVER LEAVE YOUR DEVICE — HEDERA — OCULUSVAULT — ".repeat(4);
@@ -50,6 +54,7 @@ export function Landing() {
           </p>
           <div className="lp-cta">
             <TelegramCta size="lg" />
+            <ChromeCta />
             <a className="lp-btn lp-btn-ghost lp-btn-lg" href={GITHUB} target="_blank" rel="noreferrer">
               View the source
             </a>
@@ -154,6 +159,26 @@ export function Landing() {
         </p>
       </footer>
     </div>
+  );
+}
+
+/** Desktop CTA: live Web Store link once approved, honest "in review" state
+ * until then — same pattern the Telegram CTA used before the bot launched. */
+function ChromeCta() {
+  if (CWS_URL) {
+    return (
+      <a className="lp-btn lp-btn-ghost lp-btn-lg" href={CWS_URL} target="_blank" rel="noreferrer">
+        Add to Chrome <span className="lp-arrow">→</span>
+      </a>
+    );
+  }
+  return (
+    <span
+      className="lp-btn lp-btn-ghost lp-btn-lg lp-btn-soon"
+      title="The Chrome extension is in Web Store review"
+    >
+      Chrome — in Web Store review
+    </span>
   );
 }
 
