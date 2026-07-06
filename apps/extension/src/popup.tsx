@@ -4,6 +4,8 @@ import {
   OculusVault,
   LocalEncryptedKeyProvider,
   RemoteVaultStorage,
+  buildPayLink,
+  fromPrivateKey,
   type Balance,
   type HederaNetwork,
   type HistoryItem,
@@ -27,6 +29,8 @@ import "./popup.css";
 const API_BASE = "https://api.oculusvault.com";
 const NET_KEY = "ovext:network";
 const MAINNET_ACK_KEY = "ovext:mainnetAck";
+/** Bot behind t.me pay/request links — same links the Mini App produces. */
+const BOT = "oculusvaultbot";
 
 function loadSavedNetwork(): HederaNetwork {
   try {
@@ -61,6 +65,8 @@ function App() {
   const [identity, setIdentity] = useState<WalletIdentity | null>(null);
   const [network, setNetwork] = useState<HederaNetwork>(loadSavedNetwork);
   const [askMainnet, setAskMainnet] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [storedAddr, setStoredAddr] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const boot = useCallback(async () => {
@@ -116,6 +122,30 @@ function App() {
       });
       await cacheKey(await wallet.exportKey(), wallet.network);
       setIdentity(id);
+      setPhase("ready");
+    },
+    [session],
+  );
+
+  const startRecover = useCallback(async () => {
+    const wallet = walletRef.current;
+    if (!wallet || !session) return;
+    setStoredAddr(await wallet.storedAddress(session.userId));
+    setRecovering(true);
+  }, [session]);
+
+  const onRestore = useCallback(
+    async (privateKeyHex: string, newPassword: string) => {
+      const wallet = walletRef.current;
+      if (!wallet || !session) return;
+      const id = await wallet.importWallet({
+        userId: session.userId,
+        privateKeyHex,
+        secret: { source: "password", value: newPassword },
+      });
+      await cacheKey(await wallet.exportKey(), wallet.network);
+      setIdentity(id);
+      setRecovering(false);
       setPhase("ready");
     },
     [session],
@@ -181,14 +211,24 @@ function App() {
       </div>
     );
 
-  if (phase === "locked")
+  if (phase === "locked") {
+    if (recovering)
+      return (
+        <RecoverScreen
+          existingAddress={storedAddr}
+          onRestore={onRestore}
+          onBack={() => setRecovering(false)}
+        />
+      );
     return (
       <UnlockScreen
         isNew={isNew}
         username={session?.user?.username}
         onUnlock={onUnlock}
+        onRecover={startRecover}
       />
     );
+  }
 
   return (
     <>
@@ -207,6 +247,7 @@ function App() {
         wallet={walletRef.current!}
         identity={identity!}
         setIdentity={setIdentity}
+        freshWallet={isNew}
         network={network}
         onSwitchNetwork={requestSwitch}
         onDisconnect={disconnect}
@@ -219,10 +260,12 @@ function UnlockScreen({
   isNew,
   username,
   onUnlock,
+  onRecover,
 }: {
   isNew: boolean;
   username?: string;
   onUnlock: (pw: string) => Promise<void>;
+  onRecover: () => void;
 }) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -276,7 +319,145 @@ function UnlockScreen({
         <button className="btn primary" disabled={busy} onClick={submit}>
           {busy ? "Working…" : isNew ? "Create vault" : "Unlock"}
         </button>
+        <button className="linklike unlock-recover" onClick={onRecover}>
+          {isNew
+            ? "Already have a key? Import it instead"
+            : "Forgot password? Restore from your backed-up key"}
+        </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Forgot-password recovery / key import — same flow as the Mini App. The
+ * pasted key's address is derived live so the user can confirm it's the right
+ * wallet BEFORE anything is written; replacing a different stored wallet
+ * requires an explicit opt-in.
+ */
+function RecoverScreen({
+  existingAddress,
+  onRestore,
+  onBack,
+}: {
+  existingAddress: string | null;
+  onRestore: (privateKeyHex: string, newPassword: string) => Promise<void>;
+  onBack: () => void;
+}) {
+  const [keyIn, setKeyIn] = useState("");
+  const [pw, setPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [replaceOk, setReplaceOk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const cleaned = keyIn.trim().replace(/^0x/i, "");
+  const validKey = /^[0-9a-fA-F]{64}$/.test(cleaned);
+  let derived: string | null = null;
+  if (validKey) {
+    try {
+      derived = fromPrivateKey(cleaned).evmAddress;
+    } catch {
+      derived = null;
+    }
+  }
+  const mismatch =
+    derived != null &&
+    existingAddress != null &&
+    derived.toLowerCase() !== existingAddress.toLowerCase();
+
+  const submit = async () => {
+    setErr("");
+    if (!derived) return setErr("Paste your 64-character private key (with or without 0x).");
+    if (pw.length < 8) return setErr("Use at least 8 characters for the new password.");
+    if (pw !== confirm) return setErr("Passwords don’t match.");
+    if (mismatch && !replaceOk) {
+      return setErr("Confirm the replacement checkbox to continue.");
+    }
+    setBusy(true);
+    try {
+      await onRestore(cleaned, pw);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="app unlock">
+      <div className="unlock-mark"><Aperture size={72} hero /></div>
+      <h1 className="unlock-title">Restore your vault</h1>
+      <p className="muted small unlock-sub">
+        Paste the private key you backed up. It never leaves this device — we
+        re-encrypt it with a new password of your choice.
+      </p>
+      <div className="card">
+        <input
+          className="input mono"
+          placeholder="Private key (64 hex characters)"
+          value={keyIn}
+          autoFocus
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(e) => setKeyIn(e.target.value)}
+        />
+        {derived && (
+          <p className={mismatch ? "error xsmall" : "success xsmall"}>
+            {mismatch ? (
+              <>
+                ⚠️ This key belongs to <code>{shortAddr(derived)}</code> — but
+                your stored vault is <code>{shortAddr(existingAddress!)}</code>.
+                Restoring will REPLACE the stored wallet.
+              </>
+            ) : (
+              <>✓ Key recognised — wallet {shortAddr(derived)}</>
+            )}
+          </p>
+        )}
+        {mismatch && (
+          <label className="replace-check">
+            <input
+              type="checkbox"
+              checked={replaceOk}
+              onChange={(e) => setReplaceOk(e.target.checked)}
+            />
+            <span>
+              I understand this replaces the stored wallet. Without its key or
+              password, the old wallet becomes unrecoverable.
+            </span>
+          </label>
+        )}
+        <input
+          className="input"
+          type="password"
+          placeholder="New password"
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+        />
+        <input
+          className="input"
+          type="password"
+          placeholder="Confirm new password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+        />
+        {err && <p className="error">{err}</p>}
+        <button
+          className="btn primary"
+          disabled={busy || !validKey || !pw || !confirm}
+          onClick={submit}
+        >
+          {busy ? "Restoring…" : "Restore vault"}
+        </button>
+        <button className="btn ghost" disabled={busy} onClick={onBack}>
+          Back
+        </button>
+      </div>
+      <p className="muted xsmall unlock-foot">
+        🔒 The key is encrypted on-device · only ciphertext is stored
+      </p>
     </div>
   );
 }
@@ -311,6 +492,7 @@ function Dashboard({
   wallet,
   identity,
   setIdentity,
+  freshWallet,
   network,
   onSwitchNetwork,
   onDisconnect,
@@ -318,6 +500,7 @@ function Dashboard({
   wallet: OculusVault;
   identity: WalletIdentity;
   setIdentity: (id: WalletIdentity | null) => void;
+  freshWallet: boolean;
   network: HederaNetwork;
   onSwitchNetwork: (n: HederaNetwork) => void;
   onDisconnect: () => void;
@@ -326,6 +509,18 @@ function Dashboard({
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [toast, setToast] = useState("");
   const [tab, setTab] = useState<"receive" | "send">("receive");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [backupDone, setBackupDone] = useState(false);
+  const [copied, setCopied] = useState("");
+  const [reqAmount, setReqAmount] = useState("");
+  const [requestMode, setRequestMode] = useState(false);
+
+  const copy = useCallback((text: string, tag: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(tag);
+      setTimeout(() => setCopied(""), 1500);
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     const [b, h, accountId] = await Promise.all([
@@ -388,6 +583,32 @@ function Dashboard({
         </div>
       )}
 
+      {freshWallet && !backupDone && (
+        <div className="banner">
+          <div>
+            <strong>Back up your key.</strong>
+            <span className="muted small">
+              {" "}Your backed-up key is the ONLY way back in if you forget
+              your password — export it once and store it somewhere safe.
+            </span>
+          </div>
+          <div className="banner-actions">
+            <button
+              className="btn sm"
+              onClick={() => {
+                setBackupDone(true);
+                setExportOpen(true);
+              }}
+            >
+              Export now
+            </button>
+            <button className="btn ghost sm" onClick={() => setBackupDone(true)}>
+              Later
+            </button>
+          </div>
+        </div>
+      )}
+
       <section className="balance-hero">
         <span className="balance-label">Balance · {network}</span>
         <div className="balance">{balance ? formatHbar(balance.hbar) : "…"} ℏ</div>
@@ -407,33 +628,25 @@ function Dashboard({
       </div>
 
       {tab === "receive" ? (
-        <div className="card center">
-          <div className="qr-frame"><Qr value={identity.evmAddress} size={168} /></div>
-          <code className="addr" onClick={() => navigator.clipboard.writeText(identity.evmAddress)}>
-            {identity.evmAddress}
-          </code>
-          <button className="btn primary" onClick={() => navigator.clipboard.writeText(identity.evmAddress)}>
-            Copy address
-          </button>
-          {network === "testnet" && (
-            <a
-              className="voucher"
-              href="https://faucet.hedera.com"
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => navigator.clipboard.writeText(identity.evmAddress)}
-            >
-              <span className="voucher-tag">Free ℏ</span>
-              <span className="voucher-text">
-                Claim up to 100 testnet ℏ a day at the official Hedera faucet ↗
-                — <strong>we copy your address as you click</strong>, just
-                paste it there.
-              </span>
-            </a>
-          )}
-        </div>
+        <ReceiveTab
+          wallet={wallet}
+          identity={identity}
+          network={network}
+          copied={copied}
+          copy={copy}
+          reqAmount={reqAmount}
+          setReqAmount={setReqAmount}
+          requestMode={requestMode}
+          setRequestMode={setRequestMode}
+        />
       ) : (
-        <SendTab wallet={wallet} onSent={refresh} balanceHbar={balance ? balance.hbar : null} network={network} />
+        <SendTab
+          wallet={wallet}
+          onSent={refresh}
+          balanceHbar={balance ? balance.hbar : null}
+          network={network}
+          accountReady={identity.hederaAccountId != null}
+        />
       )}
 
       <div className="card">
@@ -454,7 +667,11 @@ function Dashboard({
         ))}
       </div>
 
-      <ExportCard reveal={(pw) => wallet.exportKeyWithSecret({ source: "password", value: pw })} />
+      <ExportCard
+        open={exportOpen}
+        setOpen={setExportOpen}
+        reveal={(pw) => wallet.exportKeyWithSecret({ source: "password", value: pw })}
+      />
 
       <footer className="footer muted xsmall">
         Anchored to Telegram · non-custodial ·{" "}
@@ -464,9 +681,169 @@ function Dashboard({
   );
 }
 
+/** Receive: QR + address, request-a-payment link builder, Hedera account Nº. */
+function ReceiveTab({
+  wallet,
+  identity,
+  network,
+  copied,
+  copy,
+  reqAmount,
+  setReqAmount,
+  requestMode,
+  setRequestMode,
+}: {
+  wallet: OculusVault;
+  identity: WalletIdentity;
+  network: HederaNetwork;
+  copied: string;
+  copy: (text: string, tag: string) => void;
+  reqAmount: string;
+  setReqAmount: (v: string) => void;
+  requestMode: boolean;
+  setRequestMode: (v: boolean) => void;
+}) {
+  const requestLink = buildPayLink(
+    BOT,
+    identity.evmAddress,
+    reqAmount && Number(reqAmount) > 0 ? reqAmount : undefined,
+  );
+  const requesting = requestMode && requestLink != null;
+
+  return (
+    <>
+      <div className="card center">
+        <div className="qr-frame">
+          <Qr value={requesting ? requestLink : identity.evmAddress} size={168} />
+        </div>
+        {requesting ? (
+          <p className="muted small">
+            <strong className="req-live">
+              Requesting{reqAmount && Number(reqAmount) > 0 ? ` ${formatHbar(reqAmount)} ℏ` : " payment"}
+            </strong>{" "}
+            — anyone scanning this with their camera lands in OculusVault with
+            your details pre-filled.{" "}
+            <button className="linklike" onClick={() => setRequestMode(false)}>
+              Show plain address instead
+            </button>
+          </p>
+        ) : (
+          <p className="muted small">
+            Scan to pay this wallet — or share the address below. It works on
+            every network.
+          </p>
+        )}
+        <code className="addr" onClick={() => copy(identity.evmAddress, "evm")}>
+          {identity.evmAddress}
+        </code>
+        <button className="btn primary" onClick={() => copy(identity.evmAddress, "evm")}>
+          {copied === "evm" ? "Copied ✓" : "Copy address"}
+        </button>
+        {network === "testnet" && (
+          <a
+            className="voucher"
+            href="https://faucet.hedera.com"
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => copy(identity.evmAddress, "evm")}
+          >
+            <span className="voucher-tag">Free ℏ</span>
+            <span className="voucher-text">
+              Claim up to 100 testnet ℏ a day at the official Hedera faucet ↗
+              — <strong>we copy your address as you click</strong>, just
+              paste it there.
+            </span>
+          </a>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Request a payment</h3>
+        <p className="muted small">
+          Send someone a link that opens OculusVault with your details
+          pre-filled — they just confirm.
+        </p>
+        <input
+          className="input"
+          placeholder="Amount in HBAR (optional)"
+          inputMode="decimal"
+          value={reqAmount}
+          onChange={(e) => {
+            setReqAmount(e.target.value);
+            setRequestMode(true);
+          }}
+          onFocus={() => setRequestMode(true)}
+        />
+        <div className="req-actions">
+          <button
+            className="btn primary"
+            onClick={() => {
+              const label =
+                reqAmount && Number(reqAmount) > 0
+                  ? `Pay me ${formatHbar(reqAmount)} ℏ with OculusVault`
+                  : "Pay me with OculusVault";
+              window.open(
+                `https://t.me/share/url?url=${encodeURIComponent(requestLink)}&text=${encodeURIComponent(label)}`,
+                "_blank",
+              );
+            }}
+          >
+            Share in Telegram
+          </button>
+          <button className="btn" onClick={() => copy(requestLink, "reqlink")}>
+            {copied === "reqlink" ? "Copied ✓" : "Copy link"}
+          </button>
+        </div>
+        <code className="addr req-preview" onClick={() => copy(requestLink, "reqlink")}>
+          {requestLink}
+        </code>
+      </div>
+
+      <div className="card">
+        <h3>Hedera account Nº</h3>
+        {identity.hederaAccountId ? (
+          <>
+            <div className="acct-row">
+              <code className="addr" onClick={() => copy(identity.hederaAccountId!, "acct")}>
+                {identity.hederaAccountId}
+              </code>
+              <button className="btn sm" onClick={() => copy(identity.hederaAccountId!, "acct")}>
+                {copied === "acct" ? "✓" : "Copy"}
+              </button>
+            </div>
+            <a className="link small" href={wallet.accountUrl()} target="_blank" rel="noreferrer">
+              View on Hashscan ↗
+            </a>
+            <p className="muted xsmall">
+              Use either identifier to receive — the 0x address and this
+              account Nº are the same wallet.
+            </p>
+          </>
+        ) : (
+          <p className="muted small">
+            <span className="pending-stamp">Pending</span> Your account number
+            is minted by the network with your <strong>first deposit</strong> —
+            send any amount of {network} HBAR to the address above and it
+            appears here automatically. Account numbers are per-network: your{" "}
+            {network === "mainnet" ? "testnet" : "mainnet"} Nº is separate and
+            may already exist.
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
 /** Password-gated key export for the extension (re-verifies before reveal). */
-function ExportCard({ reveal }: { reveal: (password: string) => Promise<string> }) {
-  const [open, setOpen] = useState(false);
+function ExportCard({
+  open,
+  setOpen,
+  reveal,
+}: {
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  reveal: (password: string) => Promise<string>;
+}) {
   const [pw, setPw] = useState("");
   const [keyText, setKeyText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -523,11 +900,13 @@ function SendTab({
   onSent,
   balanceHbar,
   network,
+  accountReady,
 }: {
   wallet: OculusVault;
   onSent: () => void;
   balanceHbar: string | null;
   network: HederaNetwork;
+  accountReady: boolean;
 }) {
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
@@ -572,6 +951,20 @@ function SendTab({
       setBusy(false);
     }
   };
+
+  if (!accountReady) {
+    return (
+      <div className="card center">
+        <p className="muted small">
+          <span className="pending-stamp">Pending</span> Your wallet can’t send
+          yet — it needs a first deposit to activate its Hedera account. Share
+          your address from <strong>Receive</strong>
+          {network === "testnet" ? " or claim free testnet ℏ from the faucet" : ""}
+          , then come back.
+        </p>
+      </div>
+    );
+  }
 
   if (stage === "confirm") {
     return (
