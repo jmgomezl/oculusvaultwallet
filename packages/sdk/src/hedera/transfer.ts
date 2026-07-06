@@ -16,7 +16,7 @@ import {
 import type { HederaNetwork, SendResult } from "../types.js";
 import { getNetworkConfig, hashscanTxUrl } from "./networks.js";
 
-function clientFor(network: HederaNetwork): Client {
+export function clientFor(network: HederaNetwork): Client {
   switch (network) {
     case "testnet":
       return Client.forTestnet();
@@ -30,7 +30,7 @@ function clientFor(network: HederaNetwork): Client {
 }
 
 /** Parse a recipient given as a 0.0.x id or a 0x EVM address. */
-function recipientAccountId(to: string): AccountId {
+export function recipientAccountId(to: string): AccountId {
   const t = to.trim();
   if (t.startsWith("0x") || t.startsWith("0X")) {
     return AccountId.fromEvmAddress(0, 0, t);

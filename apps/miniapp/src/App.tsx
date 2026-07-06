@@ -12,9 +12,16 @@ import {
   type HederaNetwork,
   type HistoryItem,
   type PayIntent,
+  type TokenBalance,
+  type TokenInfo,
   type WalletIdentity,
 } from "@oculusvault/sdk";
-import { buildPayLink, openTelegramLink, fromPrivateKey } from "@oculusvault/sdk";
+import {
+  buildPayLink,
+  openTelegramLink,
+  fromPrivateKey,
+  USDC_TOKEN_IDS,
+} from "@oculusvault/sdk";
 import { authenticate, isDemoMode, type AuthResult } from "./api.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
@@ -505,6 +512,7 @@ function Dashboard({
   );
   const [view, setView] = useState<View>(intent ? "send" : "home");
   const [balance, setBalance] = useState<Balance | null>(null);
+  const [tokens, setTokens] = useState<TokenBalance[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [toast, setToast] = useState<string>("");
   const [exportOpen, setExportOpen] = useState(false);
@@ -514,13 +522,15 @@ function Dashboard({
   const [requestMode, setRequestMode] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [b, h, accountId] = await Promise.all([
+    const [b, h, t, accountId] = await Promise.all([
       wallet.getBalance(),
       wallet.getHistory(),
+      wallet.getTokenBalances().catch(() => [] as TokenBalance[]),
       wallet.refreshAccountId(),
     ]);
     setBalance(b);
     setHistory(h);
+    setTokens(t);
     if (accountId !== identity.hederaAccountId) {
       setIdentity({ ...identity, hederaAccountId: accountId });
     }
@@ -702,6 +712,7 @@ function Dashboard({
           onSent={refresh}
           prefill={intent}
           balanceHbar={balance ? balance.hbar : null}
+          tokens={tokens}
           network={network}
           accountReady={identity.hederaAccountId != null}
         />
@@ -792,6 +803,13 @@ function Dashboard({
         </a>
       )}
 
+      <TokensCard
+        wallet={wallet}
+        tokens={tokens}
+        network={network}
+        accountReady={identity.hederaAccountId != null}
+        onChanged={refresh}
+      />
       <HistoryList items={history} />
       <ExportRow
         open={exportOpen}
@@ -821,6 +839,7 @@ function SendTab({
   onSent,
   prefill,
   balanceHbar,
+  tokens,
   network,
   accountReady,
 }: {
@@ -828,14 +847,20 @@ function SendTab({
   onSent: () => void;
   prefill: PayIntent | null;
   balanceHbar: string | null;
+  tokens: TokenBalance[];
   network: HederaNetwork;
   accountReady: boolean;
 }) {
   const [to, setTo] = useState(prefill?.to ?? "");
   const [amount, setAmount] = useState(prefill?.amountHbar ?? "");
+  /** "hbar" or an HTS token id (0.0.x) held by this wallet. */
+  const [asset, setAsset] = useState<string>("hbar");
   const [stage, setStage] = useState<"edit" | "confirm">("edit");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const token = asset === "hbar" ? null : tokens.find((t) => t.tokenId === asset) ?? null;
+  const unit = token ? token.symbol : "ℏ";
 
   const validate = (): string | null => {
     const t = to.trim();
@@ -843,8 +868,12 @@ function SendTab({
       return "Recipient must be a 0x address or 0.0.x account id.";
     }
     const a = Number(amount);
-    if (!Number.isFinite(a) || a <= 0) return "Enter a positive HBAR amount.";
-    if (balanceHbar != null && a > Number(balanceHbar)) {
+    if (!Number.isFinite(a) || a <= 0) return `Enter a positive ${unit} amount.`;
+    if (token) {
+      if (a > Number(token.balance)) {
+        return `That’s more than your ${token.symbol} balance (${token.balance}).`;
+      }
+    } else if (balanceHbar != null && a > Number(balanceHbar)) {
       return `That’s more than your balance (${formatHbar(balanceHbar)} ℏ).`;
     }
     return null;
@@ -878,9 +907,15 @@ function SendTab({
     setMsg(null);
     setBusy(true);
     try {
-      const r = await wallet.send(to.trim(), amount.trim());
+      const r = token
+        ? await wallet.sendToken(token.tokenId, to.trim(), amount.trim())
+        : await wallet.send(to.trim(), amount.trim());
       haptic("success");
-      setMsg({ ok: true, text: `Sent ${formatHbar(amount)} ℏ · ${r.status}`, url: r.hashscanUrl });
+      setMsg({
+        ok: true,
+        text: `Sent ${token ? amount : formatHbar(amount)} ${unit} · ${r.status}`,
+        url: r.hashscanUrl,
+      });
       setTo("");
       setAmount("");
       setStage("edit");
@@ -914,7 +949,9 @@ function SendTab({
         <h3>Confirm transfer</h3>
         <div className="confirm-row">
           <span className="muted small">Send</span>
-          <span className="confirm-amt">{formatHbar(amount)} ℏ</span>
+          <span className="confirm-amt">
+            {token ? `${amount} ${token.symbol}` : `${formatHbar(amount)} ℏ`}
+          </span>
         </div>
         <div className="confirm-row">
           <span className="muted small">To</span>
@@ -942,6 +979,24 @@ function SendTab({
 
   return (
     <div className="card">
+      {tokens.length > 0 && (
+        <select
+          className="input"
+          value={asset}
+          aria-label="Asset to send"
+          onChange={(e) => {
+            setAsset(e.target.value);
+            setMsg(null);
+          }}
+        >
+          <option value="hbar">HBAR (ℏ)</option>
+          {tokens.map((t) => (
+            <option key={t.tokenId} value={t.tokenId}>
+              {t.symbol} — {t.balance} available
+            </option>
+          ))}
+        </select>
+      )}
       <div className="input-row">
         <input
           className="input"
@@ -957,14 +1012,188 @@ function SendTab({
       </div>
       <input
         className="input"
-        placeholder="Amount (HBAR)"
+        placeholder={token ? `Amount (${token.symbol})` : "Amount (HBAR)"}
         inputMode="decimal"
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
       />
+      {token && (
+        <p className="muted xsmall">
+          The recipient must have {token.symbol} enabled in their wallet to
+          receive it. Network fee is paid in ℏ.
+        </p>
+      )}
       <button className="btn primary" disabled={busy || !to || !amount} onClick={review}>
         Review transfer
       </button>
+      {msg && (
+        <p className={msg.ok ? "success" : "error"}>
+          {msg.text}{" "}
+          {msg.url && (
+            <a className="link" href={msg.url} target="_blank" rel="noreferrer">
+              View ↗
+            </a>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * HTS tokens the wallet holds, plus the opt-in flow. Receiving a token on
+ * Hedera requires ASSOCIATING with it first (a small on-ledger fee in HBAR) —
+ * this card makes that a one-tap action for USDC and a paste-the-id action
+ * for anything else.
+ */
+function TokensCard({
+  wallet,
+  tokens,
+  network,
+  accountReady,
+  onChanged,
+}: {
+  wallet: OculusVault;
+  tokens: TokenBalance[];
+  network: HederaNetwork;
+  accountReady: boolean;
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [tokenIdIn, setTokenIdIn] = useState("");
+  const [preview, setPreview] = useState<TokenInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const usdcId = USDC_TOKEN_IDS[network];
+  const hasUsdc = usdcId != null && tokens.some((t) => t.tokenId === usdcId);
+  const validId = /^0\.0\.\d+$/.test(tokenIdIn.trim());
+
+  const lookup = async () => {
+    setMsg(null);
+    setPreview(null);
+    setBusy(true);
+    try {
+      const info = await wallet.getTokenInfo(tokenIdIn.trim());
+      if (info.type !== "FUNGIBLE_COMMON") {
+        setMsg({ ok: false, text: "That token isn’t a fungible token — NFTs aren’t supported here." });
+      } else {
+        setPreview(info);
+      }
+    } catch {
+      setMsg({ ok: false, text: `No token ${tokenIdIn.trim()} on ${network}.` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const associate = async (tokenId: string, label: string) => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.associateToken(tokenId);
+      haptic("success");
+      setMsg({ ok: true, text: `${label} enabled · ${r.status}`, url: r.hashscanUrl });
+      setPreview(null);
+      setTokenIdIn("");
+      setAdding(false);
+      onChanged();
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3>Tokens</h3>
+      {tokens.length === 0 && (
+        <p className="muted small">
+          No tokens yet. Hedera tokens (like USDC) need a one-time opt-in
+          before you can receive them — enabling one costs a tiny HBAR fee.
+        </p>
+      )}
+      {tokens.map((t) => (
+        <div className="acct-row" key={t.tokenId}>
+          <span>
+            <strong>{t.symbol}</strong>{" "}
+            <span className="muted xsmall">{t.name}</span>
+          </span>
+          <span className="amt">{t.balance}</span>
+        </div>
+      ))}
+      {!accountReady ? (
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> Tokens unlock once
+          your account exists — receive any HBAR first.
+        </p>
+      ) : (
+        <>
+          <div className="req-actions">
+            {usdcId && !hasUsdc && (
+              <button
+                className="btn"
+                disabled={busy}
+                onClick={() => associate(usdcId, "USDC")}
+              >
+                Enable USDC
+              </button>
+            )}
+            {!adding && (
+              <button className="btn ghost" disabled={busy} onClick={() => setAdding(true)}>
+                Add by token ID
+              </button>
+            )}
+          </div>
+          {adding && (
+            <>
+              <div className="input-row">
+                <input
+                  className="input"
+                  placeholder="Token ID (0.0.…)"
+                  value={tokenIdIn}
+                  onChange={(e) => {
+                    setTokenIdIn(e.target.value);
+                    setPreview(null);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && validId && lookup()}
+                />
+                <button className="btn" disabled={busy || !validId} onClick={lookup}>
+                  Check
+                </button>
+              </div>
+              {preview && (
+                <>
+                  <p className="success xsmall">
+                    ✓ {preview.name} ({preview.symbol}) · {preview.decimals} decimals
+                  </p>
+                  <button
+                    className="btn primary"
+                    disabled={busy}
+                    onClick={() => associate(preview.tokenId, preview.symbol)}
+                  >
+                    {busy ? "Enabling…" : `Enable ${preview.symbol} (small ℏ fee)`}
+                  </button>
+                </>
+              )}
+              <button
+                className="linklike"
+                disabled={busy}
+                onClick={() => {
+                  setAdding(false);
+                  setTokenIdIn("");
+                  setPreview(null);
+                  setMsg(null);
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          )}
+        </>
+      )}
       {msg && (
         <p className={msg.ok ? "success" : "error"}>
           {msg.text}{" "}

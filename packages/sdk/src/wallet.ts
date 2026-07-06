@@ -15,6 +15,8 @@ import type { UserSecret } from "./crypto/encryption.js";
 import { fromPrivateKey } from "./crypto/keys.js";
 import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
 import { MirrorClient } from "./hedera/mirror.js";
+import { parseTokenAmount } from "./hedera/tokenAmount.js";
+import { associateToken, sendToken } from "./hedera/tokens.js";
 import { sendHbar } from "./hedera/transfer.js";
 import type { KeyProvider } from "./keyprovider/KeyProvider.js";
 import type {
@@ -23,6 +25,8 @@ import type {
   HistoryItem,
   IncomingTransfer,
   SendResult,
+  TokenBalance,
+  TokenInfo,
   WalletIdentity,
 } from "./types.js";
 
@@ -240,6 +244,65 @@ export class OculusVault {
       to,
       amountHbar,
       memo,
+    });
+  }
+
+  /** Fungible HTS tokens this wallet holds ([] until the account exists). */
+  async getTokenBalances(): Promise<TokenBalance[]> {
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) return [];
+    return this.mirror.getTokenBalances(accountId);
+  }
+
+  /** Token metadata lookup (name/symbol/decimals) — drives "add token" UIs. */
+  async getTokenInfo(tokenId: string): Promise<TokenInfo> {
+    return this.mirror.getTokenInfo(tokenId);
+  }
+
+  /**
+   * Send an HTS fungible token. `amount` is a human decimal string ("1.5");
+   * it is converted exactly using the token's on-ledger decimals — amounts
+   * with more precision than the token supports are rejected, not truncated.
+   */
+  async sendToken(
+    tokenId: string,
+    to: string,
+    amount: string | number,
+    memo?: string,
+  ): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    const info = await this.mirror.getTokenInfo(tokenId);
+    return sendToken({
+      network: this.network,
+      senderAccountId: accountId,
+      senderPrivateKeyHex: this.privateKeyHex!,
+      to,
+      tokenId,
+      amountRaw: parseTokenAmount(amount, info.decimals),
+      memo,
+    });
+  }
+
+  /** Opt in to a token so this wallet can receive it (small HBAR fee). */
+  async associateToken(tokenId: string): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return associateToken({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      tokenId,
     });
   }
 

@@ -307,15 +307,17 @@ same interface and pass it to `OculusVault` — nothing else changes.
 
 ---
 
-## Scope (v1)
+## Scope
 
 - ✅ HBAR send/receive, balance + USD, history, auto-create, export,
   incoming-watch, pay links / QR scan, shared cross-app vault.
 - ✅ **Mainnet behind guardrails**: testnet by default; switching to mainnet
   requires a one-time, plain-words confirmation (real HBAR, unaudited beta,
   keep small amounts, back up first). Same address on both networks.
-- 🚫 **No HTS tokens** in v1 — HBAR needs no association. HTS is a clean
-  extension (associate, then transfer through the same `KeyProvider`).
+- ✅ **HTS fungible tokens** (v2): balances from the Mirror Node, one-tap
+  USDC opt-in (or any token by id), association + transfer signed with the
+  same `KeyProvider`. Amounts are exact bigints — never floats. NFTs are out
+  of scope.
 - 🚫 No swaps, DeFi, or fiat on-ramp.
 
 ---

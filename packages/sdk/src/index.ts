@@ -22,6 +22,8 @@ export type {
   TransferDirection,
   IncomingTransfer,
   SendResult,
+  TokenInfo,
+  TokenBalance,
   EncryptedWalletRecord,
   KdfParams,
   SecretSource,
@@ -75,6 +77,14 @@ export {
 } from "./hedera/networks.js";
 export { MirrorClient, tinybarToHbar } from "./hedera/mirror.js";
 export { sendHbar, type SendArgs } from "./hedera/transfer.js";
+export {
+  sendToken,
+  associateToken,
+  USDC_TOKEN_IDS,
+  type SendTokenArgs,
+  type AssociateTokenArgs,
+} from "./hedera/tokens.js";
+export { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";
 
 // Telegram client helpers
 export {

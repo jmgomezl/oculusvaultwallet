@@ -53,6 +53,24 @@ export interface SendResult {
   status: string;
 }
 
+/** Public metadata of an HTS token, from the Mirror Node. */
+export interface TokenInfo {
+  tokenId: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  /** "FUNGIBLE_COMMON" | "NON_FUNGIBLE_UNIQUE" (we only surface fungibles). */
+  type: string;
+}
+
+/** An HTS token the account holds (is associated with). */
+export interface TokenBalance extends TokenInfo {
+  /** Balance in the token's smallest units. */
+  balanceRaw: bigint;
+  /** Balance as an exact decimal string, e.g. "12.5" for 6-decimals USDC. */
+  balance: string;
+}
+
 export interface IncomingTransfer extends HistoryItem {
   direction: "in";
 }

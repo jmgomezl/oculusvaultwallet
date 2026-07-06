@@ -3,8 +3,9 @@
  * transfer history, and incoming-transfer polling. No SDK/gRPC needed for
  * reads — plain HTTP works in the browser and Node alike.
  */
-import type { Balance, HistoryItem } from "../types.js";
+import type { Balance, HistoryItem, TokenBalance, TokenInfo } from "../types.js";
 import { base64urlToBytes } from "../crypto/encoding.js";
+import { formatTokenAmount } from "./tokenAmount.js";
 import { hashscanTxUrl, type NetworkConfig } from "./networks.js";
 
 const TINYBAR_PER_HBAR = 100_000_000n;
@@ -27,6 +28,9 @@ export class MirrorClient {
   private readonly cfg: NetworkConfig;
   private readonly fetchImpl: typeof fetch;
   private rateCache: { usdPerHbar: number; at: number } | null = null;
+  /** Token metadata is immutable enough to cache for the client's lifetime
+   * (a new MirrorClient is built per network switch). */
+  private tokenInfoCache = new Map<string, TokenInfo>();
 
   constructor(cfg: NetworkConfig, fetchImpl?: typeof fetch) {
     this.cfg = cfg;
@@ -103,6 +107,49 @@ export class MirrorClient {
       tinybar,
       usdEstimate: rate == null ? null : Number(hbar) * rate,
     };
+  }
+
+  /** Public metadata of an HTS token (name/symbol/decimals), cached. */
+  async getTokenInfo(tokenId: string): Promise<TokenInfo> {
+    const cached = this.tokenInfoCache.get(tokenId);
+    if (cached) return cached;
+    const data = await this.get<any>(
+      `/api/v1/tokens/${encodeURIComponent(tokenId)}`,
+    );
+    const info: TokenInfo = {
+      tokenId: data.token_id,
+      name: data.name ?? "",
+      symbol: data.symbol ?? "",
+      decimals: Number(data.decimals ?? 0),
+      type: data.type ?? "",
+    };
+    this.tokenInfoCache.set(tokenId, info);
+    return info;
+  }
+
+  /**
+   * Fungible HTS tokens the account is associated with, joined with their
+   * metadata. NFTs are filtered out — this wallet surfaces fungibles only.
+   */
+  async getTokenBalances(accountId: string): Promise<TokenBalance[]> {
+    const data = await this.get<any>(
+      `/api/v1/accounts/${encodeURIComponent(accountId)}/tokens?limit=100`,
+    );
+    const rows: Array<{ token_id: string; balance: number | string }> =
+      data.tokens ?? [];
+    const joined = await Promise.all(
+      rows.map(async (t) => {
+        const info = await this.getTokenInfo(t.token_id);
+        if (info.type !== "FUNGIBLE_COMMON") return null;
+        const balanceRaw = BigInt(t.balance ?? 0);
+        return {
+          ...info,
+          balanceRaw,
+          balance: formatTokenAmount(balanceRaw, info.decimals),
+        } satisfies TokenBalance;
+      }),
+    );
+    return joined.filter((t): t is TokenBalance => t != null);
   }
 
   /**
