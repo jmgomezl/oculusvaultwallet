@@ -202,6 +202,44 @@ test("getTokenBalances sets usdEstimate 1:1 for USDC only", async () => {
   assert.equal(tokens[0]!.usdEstimate, 12.5);
 });
 
+test("getNfts joins collection metadata and drops deleted serials", async () => {
+  const nftStub = ((url: RequestInfo | URL) => {
+    const u = String(url);
+    const json = (body: unknown) =>
+      Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    if (u.includes("/api/v1/accounts/0.0.111/nfts")) {
+      return json({
+        nfts: [
+          { token_id: "0.0.555", serial_number: 7, deleted: false },
+          { token_id: "0.0.555", serial_number: 9, deleted: true },
+        ],
+      });
+    }
+    if (u.includes("/api/v1/tokens/0.0.555")) {
+      return json({
+        token_id: "0.0.555",
+        name: "Hedera Monkeys",
+        symbol: "HMONK",
+        decimals: "0",
+        type: "NON_FUNGIBLE_UNIQUE",
+      });
+    }
+    return Promise.resolve(new Response("{}", { status: 404 }));
+  }) as typeof fetch;
+
+  const mirror = new MirrorClient(getNetworkConfig("testnet"), nftStub);
+  const nfts = await mirror.getNfts("0.0.111");
+  assert.deepEqual(nfts, [
+    {
+      tokenId: "0.0.555",
+      serialNumber: 7,
+      name: "Hedera Monkeys",
+      symbol: "HMONK",
+      hashscanUrl: "https://hashscan.io/testnet/token/0.0.555/7",
+    },
+  ]);
+});
+
 test("wallet.getTokenBalances is [] before the account exists", async () => {
   const noAccountStub = ((url: RequestInfo | URL) => {
     const u = String(url);

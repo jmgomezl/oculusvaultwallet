@@ -51,9 +51,17 @@ From a machine with SSH access to the server:
 
 ```bash
 # host defaults to root@104.248.108.201; override with DEPLOY_HOST
-# password auth: export SSHPASS=... and the script uses sshpass -e if present
 ./scripts/deploy.sh
 ```
+
+**Auth is SSH-key-only for root** (since 2026-07-07): the server has
+`PermitRootLogin prohibit-password` (drop-in at
+`/etc/ssh/sshd_config.d/60-root-key-only.conf`), so password SSH for root is
+refused. The deploy machine's `~/.ssh/config` maps the host to its key
+(`~/.ssh/oculusvault_vps_ed25519`); to authorize another machine, generate a
+key there and append its `.pub` to root's `authorized_keys` from an existing
+key session. The script's `SSHPASS` branch remains only for emergency use if
+key auth is ever deliberately re-opened.
 
 The script: builds the Mini App (with `apps/miniapp/.env.production`), bundles the
 backend, rsyncs the frontend to `/var/www/oculusvault`, copies the backend bundle

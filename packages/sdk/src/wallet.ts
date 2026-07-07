@@ -26,6 +26,7 @@ import type {
   HistoryItem,
   IncomingTransfer,
   NetworkNode,
+  NftItem,
   SendResult,
   StakingInfo,
   TokenBalance,
@@ -307,6 +308,13 @@ export class OculusVault {
       privateKeyHex: this.privateKeyHex!,
       tokenId,
     });
+  }
+
+  /** NFTs this wallet holds ([] until the account exists). View-only. */
+  async getNfts(): Promise<NftItem[]> {
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) return [];
+    return this.mirror.getNfts(accountId);
   }
 
   /** Native-staking state, or null before the account exists on-ledger. */

@@ -26,6 +26,7 @@ export type {
   TokenBalance,
   StakingInfo,
   NetworkNode,
+  NftItem,
   EncryptedWalletRecord,
   KdfParams,
   SecretSource,

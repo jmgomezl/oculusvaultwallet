@@ -85,6 +85,17 @@ export interface NetworkNode {
   description: string;
 }
 
+/** An NFT the account holds (view-only in this wallet). */
+export interface NftItem {
+  tokenId: string;
+  serialNumber: number;
+  /** Collection name/symbol from the token's metadata. */
+  name: string;
+  symbol: string;
+  /** Hashscan page for this exact serial. */
+  hashscanUrl: string;
+}
+
 /** An HTS token the account holds (is associated with). */
 export interface TokenBalance extends TokenInfo {
   /** Balance in the token's smallest units. */

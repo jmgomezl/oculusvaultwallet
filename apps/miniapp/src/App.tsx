@@ -25,6 +25,7 @@ import {
   createPasskeyQuickUnlock,
   unlockWithPasskeyQuickUnlock,
   type NetworkNode,
+  type NftItem,
   type StakingInfo,
 } from "@oculusvault/sdk";
 import { authenticate, isDemoMode, type AuthResult } from "./api.js";
@@ -646,6 +647,7 @@ function Dashboard({
   const [view, setView] = useState<View>(intent ? "send" : "home");
   const [balance, setBalance] = useState<Balance | null>(null);
   const [tokens, setTokens] = useState<TokenBalance[]>([]);
+  const [nfts, setNfts] = useState<NftItem[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [toast, setToast] = useState<string>("");
   const [exportOpen, setExportOpen] = useState(false);
@@ -656,15 +658,17 @@ function Dashboard({
   const [requestMode, setRequestMode] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [b, h, t, accountId] = await Promise.all([
+    const [b, h, t, n, accountId] = await Promise.all([
       wallet.getBalance(),
       wallet.getHistory(),
       wallet.getTokenBalances().catch(() => [] as TokenBalance[]),
+      wallet.getNfts().catch(() => [] as NftItem[]),
       wallet.refreshAccountId(),
     ]);
     setBalance(b);
     setHistory(h);
     setTokens(t);
+    setNfts(n);
     if (accountId !== identity.hederaAccountId) {
       setIdentity({ ...identity, hederaAccountId: accountId });
     }
@@ -989,6 +993,7 @@ function Dashboard({
         network={network}
         accountReady={identity.hederaAccountId != null}
       />
+      {nfts.length > 0 && <NftCard nfts={nfts} />}
       <HistoryList items={history} />
       <ExportRow
         open={exportOpen}
@@ -1428,6 +1433,38 @@ function TokensCard({
           )}
         </p>
       )}
+    </div>
+  );
+}
+
+/** View-only collectibles — knowing what you hold, with proof one tap away.
+ * Sending NFTs stays out of scope. */
+function NftCard({ nfts }: { nfts: NftItem[] }) {
+  return (
+    <div className="card">
+      <h3>Collectibles</h3>
+      {nfts.map((n) => (
+        <a
+          key={`${n.tokenId}/${n.serialNumber}`}
+          className="row"
+          href={n.hashscanUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <span className="row-glyph in">✦</span>
+          <span>
+            <strong>{n.name}</strong>{" "}
+            <span className="muted xsmall">
+              {n.symbol && `${n.symbol} · `}#{n.serialNumber}
+            </span>
+          </span>
+          <span className="muted xsmall row-when">{n.tokenId}</span>
+          <span className="link xsmall">↗</span>
+        </a>
+      ))}
+      <p className="muted xsmall">
+        View-only — this wallet doesn’t send NFTs (yet).
+      </p>
     </div>
   );
 }

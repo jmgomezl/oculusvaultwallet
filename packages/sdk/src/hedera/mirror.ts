@@ -7,6 +7,7 @@ import type {
   Balance,
   HistoryItem,
   NetworkNode,
+  NftItem,
   StakingInfo,
   TokenBalance,
   TokenInfo,
@@ -186,6 +187,41 @@ export class MirrorClient {
       }),
     );
     return joined.filter((t): t is TokenBalance => t != null);
+  }
+
+  /** NFTs the account holds, joined with collection metadata. View-only. */
+  async getNfts(accountId: string): Promise<NftItem[]> {
+    const data = await this.get<any>(
+      `/api/v1/accounts/${encodeURIComponent(accountId)}/nfts?limit=50`,
+    );
+    const rows: Array<{
+      token_id: string;
+      serial_number: number;
+      deleted?: boolean;
+    }> = data.nfts ?? [];
+    const items = await Promise.all(
+      rows
+        .filter((n) => !n.deleted)
+        .map(async (n) => {
+          let name = n.token_id;
+          let symbol = "";
+          try {
+            const info = await this.getTokenInfo(n.token_id);
+            name = info.name || n.token_id;
+            symbol = info.symbol;
+          } catch {
+            // Collection metadata failing must not hide the NFT itself.
+          }
+          return {
+            tokenId: n.token_id,
+            serialNumber: n.serial_number,
+            name,
+            symbol,
+            hashscanUrl: `${this.cfg.hashscanBase}/token/${n.token_id}/${n.serial_number}`,
+          } satisfies NftItem;
+        }),
+    );
+    return items;
   }
 
   /**
