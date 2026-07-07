@@ -29,6 +29,7 @@ import {
   type StakingInfo,
 } from "@oculusvault/sdk";
 import { authenticate, isDemoMode, type AuthResult } from "./api.js";
+import { WcBridge, type WcProposal, type WcRequest, type WcSession } from "./wcBridge.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
 import { Landing } from "./Landing.js";
@@ -41,6 +42,9 @@ const NET_KEY = "oculusvault:network";
 const MAINNET_ACK_KEY = "oculusvault:mainnetAck";
 /** Bot username powering share/request links (t.me/<bot>/app?startapp=…). */
 const BOT = import.meta.env.VITE_BOT_USERNAME ?? "";
+/** WalletConnect project id (cloud.reown.com). Unset → dApp connections show
+ * an honest coming-soon state; set it and rebuild to go live. */
+const WC_PROJECT_ID = import.meta.env.VITE_WC_PROJECT_ID ?? "";
 
 /** Dev-only escape hatch: run the wallet UI in a browser for local
  * development/preview (`VITE_FORCE_WALLET=true` in .env.development).
@@ -1010,6 +1014,11 @@ function Dashboard({
         accountReady={identity.hederaAccountId != null}
       />
       {nfts.length > 0 && <NftCard nfts={nfts} wallet={wallet} onChanged={refresh} />}
+      <ConnectCard
+        wallet={wallet}
+        network={network}
+        accountReady={identity.hederaAccountId != null}
+      />
       <HistoryList items={history} />
       <ExportRow
         open={exportOpen}
@@ -1554,6 +1563,239 @@ function NftCard({
             </a>
           )}
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Connect to apps (WalletConnect / HIP-820). The dApp does the dApp work;
+ * OculusVault's job is the two consent moments: session approval (who is
+ * connecting) and request approval (what exactly gets signed). Nothing signs
+ * without a tap here.
+ */
+function ConnectCard({
+  wallet,
+  network,
+  accountReady,
+}: {
+  wallet: OculusVault;
+  network: HederaNetwork;
+  accountReady: boolean;
+}) {
+  const [bridge, setBridge] = useState<WcBridge | null>(null);
+  const [sessions, setSessions] = useState<WcSession[]>([]);
+  const [proposal, setProposal] = useState<WcProposal | null>(null);
+  const [request, setRequest] = useState<WcRequest | null>(null);
+  const [uri, setUri] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!WC_PROJECT_ID || !accountReady) return;
+    let dead = false;
+    WcBridge.create({
+      projectId: WC_PROJECT_ID,
+      network,
+      wallet,
+      onProposal: (p) => {
+        if (!dead) setProposal(p);
+      },
+      onRequest: (r) => {
+        if (!dead) setRequest(r);
+      },
+      onSessionsChanged: (s) => {
+        if (!dead) setSessions(s);
+      },
+    })
+      .then((b) => {
+        if (!dead) setBridge(b);
+      })
+      .catch((e) => {
+        if (!dead) setMsg({ ok: false, text: (e as Error).message });
+      });
+    return () => {
+      dead = true;
+    };
+    // network is fixed per Dashboard mount (key={network})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountReady]);
+
+  const pair = async (raw: string) => {
+    if (!bridge) return;
+    setMsg(null);
+    setBusy(true);
+    try {
+      await bridge.pair(raw);
+      setUri("");
+      setMsg({ ok: true, text: "Pairing… the app’s connection request appears here in a moment." });
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const scan = async () => {
+    const text = await scanQr("Scan the app’s WalletConnect QR");
+    if (text) await pair(text);
+  };
+
+  const act = async (
+    fn: () => Promise<void>,
+    close: () => void,
+    okText: string,
+  ) => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      await fn();
+      haptic("success");
+      setMsg({ ok: true, text: okText });
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+      close();
+    }
+  };
+
+  if (!WC_PROJECT_ID) {
+    return (
+      <div className="card">
+        <h3>Connect to apps</h3>
+        <p className="muted small">
+          WalletConnect support for Hedera dApps (swap on SaucerSwap, use any
+          dApp with this wallet as the signer) — <strong>coming soon</strong>.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <h3>Connect to apps</h3>
+      {!accountReady ? (
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> Connections unlock
+          once your account exists — receive any HBAR first.
+        </p>
+      ) : (
+        <>
+          <p className="muted small">
+            Use this wallet on any Hedera dApp: choose WalletConnect there,
+            then paste its <code>wc:</code> link (or scan the QR). Keep this
+            screen open while you use the app — every signature is approved
+            here.
+          </p>
+          <div className="input-row">
+            <input
+              className="input"
+              placeholder="wc:…"
+              value={uri}
+              onChange={(e) => setUri(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && uri && pair(uri)}
+            />
+            {!isDemoMode() && canScanQr() && (
+              <button className="btn scan" disabled={busy || !bridge} onClick={scan} title="Scan the WalletConnect QR">
+                ⌗
+              </button>
+            )}
+          </div>
+          <button
+            className="btn"
+            disabled={busy || !bridge || !uri}
+            onClick={() => pair(uri)}
+          >
+            {bridge ? "Connect" : "Starting up…"}
+          </button>
+          {sessions.length > 0 && (
+            <>
+              <h3>Connected</h3>
+              {sessions.map((s) => (
+                <div className="acct-row" key={s.topic}>
+                  <span>
+                    <strong>{s.name}</strong>{" "}
+                    <span className="muted xsmall">{s.url}</span>
+                  </span>
+                  <button
+                    className="btn sm ghost"
+                    disabled={busy}
+                    onClick={() => bridge?.disconnect(s.topic)}
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
+      {msg && <p className={msg.ok ? "success" : "error"}>{msg.text}</p>}
+
+      {proposal && (
+        <div className="modal-backdrop">
+          <div className="card modal">
+            <h2>Connect to {proposal.name}?</h2>
+            <p className="muted small">
+              {proposal.url && (
+                <>
+                  <code className="addr">{proposal.url}</code>
+                  <br />
+                </>
+              )}
+              This app will see your account Nº and can <strong>request</strong>{" "}
+              transactions — each one still needs your approval here, every
+              time.
+            </p>
+            <button
+              className="btn primary"
+              disabled={busy}
+              onClick={() => act(proposal.approve, () => setProposal(null), `Connected to ${proposal.name}.`)}
+            >
+              Connect
+            </button>
+            <button
+              className="btn ghost"
+              disabled={busy}
+              onClick={() => act(proposal.reject, () => setProposal(null), "Connection rejected.")}
+            >
+              Reject
+            </button>
+          </div>
+        </div>
+      )}
+
+      {request && (
+        <div className="modal-backdrop">
+          <div className="card modal">
+            <h2>{request.name} asks you to sign</h2>
+            <p className="small">
+              <strong>{request.summary}</strong>
+            </p>
+            <p className="muted xsmall">
+              {request.method} · {network}
+              {network === "mainnet" ? " — real funds" : ""}. Only approve if
+              you just initiated this in {request.name} yourself.
+            </p>
+            <button
+              className="btn primary"
+              disabled={busy}
+              onClick={() => act(request.approve, () => setRequest(null), "Signed & sent to the app.")}
+            >
+              {busy ? "Signing…" : "Approve & sign"}
+            </button>
+            <button
+              className="btn ghost"
+              disabled={busy}
+              onClick={() => act(request.reject, () => setRequest(null), "Request rejected.")}
+            >
+              Reject
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

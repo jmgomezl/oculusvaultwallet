@@ -97,6 +97,7 @@ export {
 } from "./hedera/tokens.js";
 export { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";
 export { setStaking, type SetStakingArgs } from "./hedera/staking.js";
+export { describeTransaction } from "./hedera/describe.js";
 
 // Telegram client helpers
 export {
