@@ -873,6 +873,22 @@ function Dashboard({
             </span>
           </a>
         )}
+        {network === "mainnet" && (
+          <a
+            className="voucher"
+            href="https://www.moonpay.com/buy/hbar"
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => copy(identity.evmAddress, "evm")}
+          >
+            <span className="voucher-tag">Buy ℏ</span>
+            <span className="voucher-text">
+              Top up with a card via MoonPay ↗ — an independent third-party
+              on-ramp. <strong>We copy your address as you tap</strong>; paste
+              it as the destination wallet there.
+            </span>
+          </a>
+        )}
       </div>
     );
   }
@@ -993,7 +1009,7 @@ function Dashboard({
         network={network}
         accountReady={identity.hederaAccountId != null}
       />
-      {nfts.length > 0 && <NftCard nfts={nfts} />}
+      {nfts.length > 0 && <NftCard nfts={nfts} wallet={wallet} onChanged={refresh} />}
       <HistoryList items={history} />
       <ExportRow
         open={exportOpen}
@@ -1437,20 +1453,52 @@ function TokensCard({
   );
 }
 
-/** View-only collectibles — knowing what you hold, with proof one tap away.
- * Sending NFTs stays out of scope. */
-function NftCard({ nfts }: { nfts: NftItem[] }) {
+/** Collectibles — what you hold, with proof one tap away, and a per-serial
+ * send flow (confirm-gated; transfers are final). */
+function NftCard({
+  nfts,
+  wallet,
+  onChanged,
+}: {
+  nfts: NftItem[];
+  wallet: OculusVault;
+  onChanged: () => void;
+}) {
+  const [sending, setSending] = useState<NftItem | null>(null);
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const validTo = /^0x[0-9a-fA-F]{40}$/.test(to.trim()) || /^0\.0\.[0-9]+$/.test(to.trim());
+
+  const send = async () => {
+    if (!sending) return;
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.sendNft(sending.tokenId, sending.serialNumber, to.trim());
+      haptic("success");
+      setMsg({
+        ok: true,
+        text: `Sent ${sending.name} #${sending.serialNumber} · ${r.status}`,
+        url: r.hashscanUrl,
+      });
+      setSending(null);
+      setTo("");
+      onChanged();
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="card">
       <h3>Collectibles</h3>
       {nfts.map((n) => (
-        <a
-          key={`${n.tokenId}/${n.serialNumber}`}
-          className="row"
-          href={n.hashscanUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
+        <div className="row" key={`${n.tokenId}/${n.serialNumber}`}>
           <span className="row-glyph in">✦</span>
           <span>
             <strong>{n.name}</strong>{" "}
@@ -1459,12 +1507,54 @@ function NftCard({ nfts }: { nfts: NftItem[] }) {
             </span>
           </span>
           <span className="muted xsmall row-when">{n.tokenId}</span>
-          <span className="link xsmall">↗</span>
-        </a>
+          <button
+            className="btn sm"
+            disabled={busy}
+            onClick={() => {
+              setMsg(null);
+              setTo("");
+              setSending(sending?.tokenId === n.tokenId && sending.serialNumber === n.serialNumber ? null : n);
+            }}
+          >
+            Send
+          </button>
+          <a className="link xsmall" href={n.hashscanUrl} target="_blank" rel="noreferrer">
+            ↗
+          </a>
+        </div>
       ))}
-      <p className="muted xsmall">
-        View-only — this wallet doesn’t send NFTs (yet).
-      </p>
+      {sending && (
+        <>
+          <p className="muted small">
+            Sending <strong>{sending.name} #{sending.serialNumber}</strong>.
+            The recipient must have this collection enabled (most wallets
+            auto-accept). Transfers are final.
+          </p>
+          <input
+            className="input"
+            placeholder="Recipient (0x… or 0.0.…)"
+            value={to}
+            autoFocus
+            onChange={(e) => setTo(e.target.value)}
+          />
+          <button className="btn primary" disabled={busy || !validTo} onClick={send}>
+            {busy ? "Sending…" : `Send #${sending.serialNumber} — final`}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={() => setSending(null)}>
+            Cancel
+          </button>
+        </>
+      )}
+      {msg && (
+        <p className={msg.ok ? "success" : "error"}>
+          {msg.text}{" "}
+          {msg.url && (
+            <a className="link" href={msg.url} target="_blank" rel="noreferrer">
+              View ↗
+            </a>
+          )}
+        </p>
+      )}
     </div>
   );
 }

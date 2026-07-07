@@ -17,7 +17,7 @@ import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
 import { MirrorClient } from "./hedera/mirror.js";
 import { setStaking } from "./hedera/staking.js";
 import { parseTokenAmount } from "./hedera/tokenAmount.js";
-import { associateToken, sendToken } from "./hedera/tokens.js";
+import { associateToken, sendNft, sendToken } from "./hedera/tokens.js";
 import { sendHbar } from "./hedera/transfer.js";
 import type { KeyProvider } from "./keyprovider/KeyProvider.js";
 import type {
@@ -293,6 +293,31 @@ export class OculusVault {
     });
   }
 
+  /** Transfer one NFT serial this wallet owns. */
+  async sendNft(
+    tokenId: string,
+    serialNumber: number,
+    to: string,
+    memo?: string,
+  ): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return sendNft({
+      network: this.network,
+      senderAccountId: accountId,
+      senderPrivateKeyHex: this.privateKeyHex!,
+      to,
+      tokenId,
+      serialNumber,
+      memo,
+    });
+  }
+
   /** Opt in to a token so this wallet can receive it (small HBAR fee). */
   async associateToken(tokenId: string): Promise<SendResult> {
     this.requireUnlocked();
@@ -310,7 +335,7 @@ export class OculusVault {
     });
   }
 
-  /** NFTs this wallet holds ([] until the account exists). View-only. */
+  /** NFTs this wallet holds ([] until the account exists). */
   async getNfts(): Promise<NftItem[]> {
     const accountId = this.accountId ?? (await this.refreshAccountId());
     if (!accountId) return [];

@@ -189,7 +189,7 @@ export class MirrorClient {
     return joined.filter((t): t is TokenBalance => t != null);
   }
 
-  /** NFTs the account holds, joined with collection metadata. View-only. */
+  /** NFTs the account holds, joined with collection metadata. */
   async getNfts(accountId: string): Promise<NftItem[]> {
     const data = await this.get<any>(
       `/api/v1/accounts/${encodeURIComponent(accountId)}/nfts?limit=50`,

@@ -316,9 +316,16 @@ same interface and pass it to `OculusVault` — nothing else changes.
   keep small amounts, back up first). Same address on both networks.
 - ✅ **HTS fungible tokens** (v2): balances from the Mirror Node, one-tap
   USDC opt-in (or any token by id), association + transfer signed with the
-  same `KeyProvider`. Amounts are exact bigints — never floats. NFTs are out
-  of scope.
-- 🚫 No swaps, DeFi, or fiat on-ramp.
+  same `KeyProvider`. Amounts are exact bigints — never floats.
+- ✅ **NFTs**: holdings with collection metadata, per-serial Hashscan proof,
+  and single-serial sends (confirm-gated).
+- ✅ **Native staking** to a network node (no lockup) and a third-party
+  **buy-HBAR entry** on mainnet (MoonPay link — the wallet never touches
+  fiat).
+- 🚫 No swaps/DeFi *yet* — planned as dApp connectivity (WalletConnect) so
+  DEXes integrate the wallet, rather than the wallet reimplementing a DEX.
+- 🚫 No previewnet USDC: Circle doesn't mint USDC on previewnet (it resets
+  regularly) — the Tokens card degrades to add-by-id there automatically.
 
 ---
 

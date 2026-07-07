@@ -85,7 +85,7 @@ export interface NetworkNode {
   description: string;
 }
 
-/** An NFT the account holds (view-only in this wallet). */
+/** An NFT the account holds. */
 export interface NftItem {
   tokenId: string;
   serialNumber: number;

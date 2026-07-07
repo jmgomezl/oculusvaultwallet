@@ -43,6 +43,9 @@ function friendlyTokenError(err: unknown): Error {
   if (/TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT/.test(msg)) {
     return new Error("This token is already added to your wallet.");
   }
+  if (/SENDER_DOES_NOT_OWN_NFT_SERIAL_NO|INVALID_NFT_ID/.test(msg)) {
+    return new Error("This wallet doesn’t own that NFT serial.");
+  }
   return err instanceof Error ? err : new Error(msg);
 }
 
@@ -73,6 +76,49 @@ export async function sendToken(args: SendTokenArgs): Promise<SendResult> {
       .addTokenTransfer(token, recipientAccountId(args.to), amount);
     if (args.memo) tx = tx.setTransactionMemo(args.memo);
 
+    const response = await tx.execute(client);
+    const receipt = await response.getReceipt(client);
+    const transactionId = response.transactionId.toString();
+    return {
+      transactionId,
+      hashscanUrl: hashscanTxUrl(cfg, transactionId),
+      status: receipt.status.toString(),
+    };
+  } catch (err) {
+    throw friendlyTokenError(err);
+  } finally {
+    client.close();
+  }
+}
+
+export interface SendNftArgs {
+  network: HederaNetwork;
+  senderAccountId: string;
+  senderPrivateKeyHex: string;
+  to: string;
+  tokenId: string;
+  serialNumber: number;
+  memo?: string;
+}
+
+/** Transfer one NFT serial. The recipient must be associated with the
+ * collection or have automatic-association slots free (alias-created
+ * accounts have unlimited auto-association since HIP-904). */
+export async function sendNft(args: SendNftArgs): Promise<SendResult> {
+  const cfg = getNetworkConfig(args.network);
+  const client = clientFor(args.network);
+  const senderKey = PrivateKey.fromStringECDSA(args.senderPrivateKeyHex);
+  const senderId = AccountId.fromString(args.senderAccountId);
+  client.setOperator(senderId, senderKey);
+
+  try {
+    let tx = new TransferTransaction().addNftTransfer(
+      TokenId.fromString(args.tokenId),
+      args.serialNumber,
+      senderId,
+      recipientAccountId(args.to),
+    );
+    if (args.memo) tx = tx.setTransactionMemo(args.memo);
     const response = await tx.execute(client);
     const receipt = await response.getReceipt(client);
     const transactionId = response.transactionId.toString();
