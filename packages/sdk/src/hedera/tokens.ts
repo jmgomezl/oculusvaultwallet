@@ -24,11 +24,7 @@ import type { HederaNetwork, SendResult } from "../types.js";
 import { getNetworkConfig, hashscanTxUrl } from "./networks.js";
 import { clientFor, recipientAccountId } from "./transfer.js";
 
-/** Well-known fungible tokens, verified against the Mirror Node. */
-export const USDC_TOKEN_IDS: Partial<Record<HederaNetwork, string>> = {
-  mainnet: "0.0.456858", // USD Coin (USDC), 6 decimals
-  testnet: "0.0.429274", // USD Coin (USDC), 6 decimals
-};
+export { USDC_TOKEN_IDS } from "./knownTokens.js";
 
 /** Map Hedera status codes to sentences a wallet user can act on. */
 function friendlyTokenError(err: unknown): Error {

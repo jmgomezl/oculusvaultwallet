@@ -33,10 +33,15 @@ export type TransferDirection = "in" | "out";
 export interface HistoryItem {
   /** Hedera transaction id, e.g. "0.0.1234@1700000000.000000000". */
   transactionId: string;
-  /** Signed HBAR amount for this account ("+1.5" inbound, "-0.25" outbound). */
+  /** Signed decimal amount for this account — HBAR unless `token` is set,
+   * in which case it's denominated in that token. */
   amount: string;
+  /** Raw signed amount: tinybar for HBAR items, the token's smallest units
+   * when `token` is set. */
   tinybar: bigint;
   direction: TransferDirection;
+  /** Set when this movement is an HTS token transfer (absent = HBAR). */
+  token?: { tokenId: string; symbol: string; decimals: number };
   /** Counterparty account id or evm address, best-effort. */
   counterparty: string | null;
   /** ISO-8601 timestamp of consensus. */
@@ -69,6 +74,8 @@ export interface TokenBalance extends TokenInfo {
   balanceRaw: bigint;
   /** Balance as an exact decimal string, e.g. "12.5" for 6-decimals USDC. */
   balance: string;
+  /** Fiat estimate — 1:1 for USDC, null for tokens with no price source. */
+  usdEstimate: number | null;
 }
 
 export interface IncomingTransfer extends HistoryItem {

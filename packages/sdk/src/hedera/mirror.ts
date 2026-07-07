@@ -5,6 +5,7 @@
  */
 import type { Balance, HistoryItem, TokenBalance, TokenInfo } from "../types.js";
 import { base64urlToBytes } from "../crypto/encoding.js";
+import { USDC_TOKEN_IDS } from "./knownTokens.js";
 import { formatTokenAmount } from "./tokenAmount.js";
 import { hashscanTxUrl, type NetworkConfig } from "./networks.js";
 
@@ -142,10 +143,15 @@ export class MirrorClient {
         const info = await this.getTokenInfo(t.token_id);
         if (info.type !== "FUNGIBLE_COMMON") return null;
         const balanceRaw = BigInt(t.balance ?? 0);
+        const balance = formatTokenAmount(balanceRaw, info.decimals);
         return {
           ...info,
           balanceRaw,
-          balance: formatTokenAmount(balanceRaw, info.decimals),
+          balance,
+          usdEstimate:
+            info.tokenId === USDC_TOKEN_IDS[this.cfg.network]
+              ? Number(balance) // USDC is 1:1 by definition of the estimate
+              : null,
         } satisfies TokenBalance;
       }),
     );
@@ -153,9 +159,10 @@ export class MirrorClient {
   }
 
   /**
-   * Crypto-transfer history for an account, newest first. Each Hedera
-   * transaction carries a `transfers` array; we collapse it to this account's
-   * net HBAR movement.
+   * Transfer history for an account, newest first — HBAR and HTS token
+   * movements. HTS transfers ARE CryptoTransfer transactions on Hedera; they
+   * arrive in the same query with a `token_transfers` array, so one tx can
+   * yield several items (an HBAR row and/or one row per token moved).
    */
   async getHistory(
     accountId: string,
@@ -173,25 +180,8 @@ export class MirrorClient {
     const data = await this.get<any>(`/api/v1/transactions?${params}`);
     const items: HistoryItem[] = [];
     for (const tx of data.transactions ?? []) {
-      const transfers: Array<{ account: string; amount: number }> =
-        tx.transfers ?? [];
-      const mine = transfers.find((t) => t.account === accountId);
-      if (!mine || mine.amount === 0) continue;
-      const tinybar = BigInt(mine.amount);
-      const direction = tinybar >= 0n ? "in" : "out";
-      // Counterparty heuristic: the largest opposite-sign transfer.
-      const counter = transfers
-        .filter((t) => t.account !== accountId)
-        .filter((t) =>
-          direction === "in" ? t.amount < 0 : t.amount > 0,
-        )
-        .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))[0];
-      items.push({
+      const base = {
         transactionId: tx.transaction_id,
-        amount: tinybarToHbar(tinybar),
-        tinybar,
-        direction,
-        counterparty: counter?.account ?? null,
         timestamp: new Date(
           Math.floor(Number(tx.consensus_timestamp) * 1000),
         ).toISOString(),
@@ -200,7 +190,70 @@ export class MirrorClient {
         memo: tx.memo_base64
           ? new TextDecoder().decode(base64urlToBytes(tx.memo_base64))
           : undefined,
-      });
+      };
+      const transfers: Array<{ account: string; amount: number }> =
+        tx.transfers ?? [];
+      const tokenTransfers: Array<{
+        token_id: string;
+        account: string;
+        amount: number;
+      }> = tx.token_transfers ?? [];
+      const myTokenMoves = tokenTransfers.filter(
+        (t) => t.account === accountId && t.amount !== 0,
+      );
+
+      // HBAR row. When the only HBAR movement is paying the network fee for
+      // a token transfer, drop it — "-0.0018 ℏ" next to "-5 USDC" is noise.
+      // charged_tx_fee is exact, so this never hides a real payment.
+      const mine = transfers.find((t) => t.account === accountId);
+      const feeOnly =
+        mine != null &&
+        mine.amount < 0 &&
+        myTokenMoves.length > 0 &&
+        BigInt(-mine.amount) === BigInt(tx.charged_tx_fee ?? 0);
+      if (mine && mine.amount !== 0 && !feeOnly) {
+        const tinybar = BigInt(mine.amount);
+        const direction = tinybar >= 0n ? "in" : "out";
+        // Counterparty heuristic: the largest opposite-sign transfer.
+        const counter = transfers
+          .filter((t) => t.account !== accountId)
+          .filter((t) => (direction === "in" ? t.amount < 0 : t.amount > 0))
+          .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))[0];
+        items.push({
+          ...base,
+          amount: tinybarToHbar(tinybar),
+          tinybar,
+          direction,
+          counterparty: counter?.account ?? null,
+        });
+      }
+
+      // Token rows — one per token this account moved in the tx.
+      for (const move of myTokenMoves) {
+        let symbol = move.token_id;
+        let decimals = 0;
+        try {
+          const info = await this.getTokenInfo(move.token_id);
+          symbol = info.symbol || move.token_id;
+          decimals = info.decimals;
+        } catch {
+          // Metadata lookup failing must not hide the movement itself.
+        }
+        const raw = BigInt(move.amount);
+        const direction = raw >= 0n ? "in" : "out";
+        const counter = tokenTransfers
+          .filter((t) => t.token_id === move.token_id && t.account !== accountId)
+          .filter((t) => (direction === "in" ? t.amount < 0 : t.amount > 0))
+          .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))[0];
+        items.push({
+          ...base,
+          amount: formatTokenAmount(raw, decimals),
+          tinybar: raw,
+          direction,
+          token: { tokenId: move.token_id, symbol, decimals },
+          counterparty: counter?.account ?? null,
+        });
+      }
     }
     return items;
   }

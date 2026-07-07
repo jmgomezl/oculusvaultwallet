@@ -517,6 +517,7 @@ function Dashboard({
   const [backupDone, setBackupDone] = useState(false);
   const [copied, setCopied] = useState("");
   const [reqAmount, setReqAmount] = useState("");
+  const [reqAsset, setReqAsset] = useState("hbar");
   const [requestMode, setRequestMode] = useState(false);
 
   const copy = useCallback((text: string, tag: string) => {
@@ -545,7 +546,11 @@ function Dashboard({
     refresh();
     const poll = setInterval(refresh, 6000);
     const stop = wallet.onIncoming((t) => {
-      setToast(`Received ${formatHbar(t.amount)} ℏ`);
+      setToast(
+        t.token
+          ? `Received ${t.amount} ${t.token.symbol}`
+          : `Received ${formatHbar(t.amount)} ℏ`,
+      );
       refresh();
       setTimeout(() => setToast(""), 4000);
     });
@@ -638,10 +643,13 @@ function Dashboard({
           wallet={wallet}
           identity={identity}
           network={network}
+          tokens={tokens}
           copied={copied}
           copy={copy}
           reqAmount={reqAmount}
           setReqAmount={setReqAmount}
+          reqAsset={reqAsset}
+          setReqAsset={setReqAsset}
           requestMode={requestMode}
           setRequestMode={setRequestMode}
         />
@@ -674,7 +682,7 @@ function Dashboard({
             </span>
             <span className={it.direction === "in" ? "amt in" : "amt out"}>
               {it.direction === "in" ? "+" : ""}
-              {formatHbar(it.amount)} ℏ
+              {it.token ? `${it.amount} ${it.token.symbol}` : `${formatHbar(it.amount)} ℏ`}
             </span>
             <span className="muted xsmall row-when">{new Date(it.timestamp).toLocaleString()}</span>
             <span className="link xsmall">↗</span>
@@ -701,27 +709,36 @@ function ReceiveTab({
   wallet,
   identity,
   network,
+  tokens,
   copied,
   copy,
   reqAmount,
   setReqAmount,
+  reqAsset,
+  setReqAsset,
   requestMode,
   setRequestMode,
 }: {
   wallet: OculusVault;
   identity: WalletIdentity;
   network: HederaNetwork;
+  tokens: TokenBalance[];
   copied: string;
   copy: (text: string, tag: string) => void;
   reqAmount: string;
   setReqAmount: (v: string) => void;
+  reqAsset: string;
+  setReqAsset: (v: string) => void;
   requestMode: boolean;
   setRequestMode: (v: boolean) => void;
 }) {
+  const reqToken = tokens.find((t) => t.tokenId === reqAsset) ?? null;
+  const reqUnit = reqToken ? reqToken.symbol : "ℏ";
   const requestLink = buildPayLink(
     BOT,
     identity.evmAddress,
     reqAmount && Number(reqAmount) > 0 ? reqAmount : undefined,
+    reqToken ? reqToken.tokenId : undefined,
   );
   const requesting = requestMode && requestLink != null;
 
@@ -734,7 +751,12 @@ function ReceiveTab({
         {requesting ? (
           <p className="muted small">
             <strong className="req-live">
-              Requesting{reqAmount && Number(reqAmount) > 0 ? ` ${formatHbar(reqAmount)} ℏ` : " payment"}
+              Requesting
+              {reqAmount && Number(reqAmount) > 0
+                ? ` ${reqToken ? reqAmount : formatHbar(reqAmount)} ${reqUnit}`
+                : reqToken
+                  ? ` ${reqToken.symbol}`
+                  : " payment"}
             </strong>{" "}
             — anyone scanning this with their camera lands in OculusVault with
             your details pre-filled.{" "}
@@ -778,9 +800,27 @@ function ReceiveTab({
           Send someone a link that opens OculusVault with your details
           pre-filled — they just confirm.
         </p>
+        {tokens.length > 0 && (
+          <select
+            className="input"
+            value={reqAsset}
+            aria-label="Asset to request"
+            onChange={(e) => {
+              setReqAsset(e.target.value);
+              setRequestMode(true);
+            }}
+          >
+            <option value="hbar">HBAR (ℏ)</option>
+            {tokens.map((t) => (
+              <option key={t.tokenId} value={t.tokenId}>
+                {t.symbol} — {t.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           className="input"
-          placeholder="Amount in HBAR (optional)"
+          placeholder={`Amount in ${reqToken ? reqToken.symbol : "HBAR"} (optional)`}
           inputMode="decimal"
           value={reqAmount}
           onChange={(e) => {
@@ -795,8 +835,10 @@ function ReceiveTab({
             onClick={() => {
               const label =
                 reqAmount && Number(reqAmount) > 0
-                  ? `Pay me ${formatHbar(reqAmount)} ℏ with OculusVault`
-                  : "Pay me with OculusVault";
+                  ? `Pay me ${reqToken ? reqAmount : formatHbar(reqAmount)} ${reqUnit} with OculusVault`
+                  : reqToken
+                    ? `Pay me ${reqToken.symbol} with OculusVault`
+                    : "Pay me with OculusVault";
               window.open(
                 `https://t.me/share/url?url=${encodeURIComponent(requestLink)}&text=${encodeURIComponent(label)}`,
                 "_blank",
@@ -926,7 +968,12 @@ function TokensCard({
             <strong>{t.symbol}</strong>{" "}
             <span className="muted xsmall">{t.name}</span>
           </span>
-          <span className="amt">{t.balance}</span>
+          <span className="amt">
+            {t.balance}
+            {t.usdEstimate != null && (
+              <span className="muted xsmall"> {formatUsd(t.usdEstimate)}</span>
+            )}
+          </span>
         </div>
       ))}
       {!accountReady ? (

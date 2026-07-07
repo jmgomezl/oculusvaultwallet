@@ -48,6 +48,32 @@ test("round-trips account ids through buildPayParam", () => {
   });
 });
 
+test("token pay intents: build + parse round-trip", () => {
+  // Amount + token
+  assert.equal(
+    buildPayParam(EVM, "1.5", "0.0.429274"),
+    `pay_${EVM}_1-5_t429274`,
+  );
+  assert.deepEqual(parsePayIntent(`pay_${EVM}_1-5_t429274`), {
+    to: EVM,
+    amountHbar: "1.5",
+    tokenId: "0.0.429274",
+  });
+  // Token without amount
+  assert.deepEqual(parsePayIntent(buildPayParam("0.0.1234", undefined, "0.0.456858")), {
+    to: "0.0.1234",
+    amountHbar: undefined,
+    tokenId: "0.0.456858",
+  });
+  // Full deep link carries the token through
+  const link = buildPayLink("OculusVaultBot", EVM, "2.5", "0.0.429274");
+  assert.equal(parsePayIntent(link)?.tokenId, "0.0.429274");
+  // Invalid token id refuses to build
+  assert.throws(() => buildPayParam(EVM, "1", "429274"), /Invalid token id/);
+  // Unknown future segments are ignored, not fatal
+  assert.equal(parsePayIntent(`pay_${EVM}_1-5_x9z`)?.amountHbar, "1.5");
+});
+
 test("rejects garbage, zero amounts, and non-addresses", () => {
   assert.equal(parsePayIntent("hello world"), null);
   assert.equal(parsePayIntent("pay_notanaddress_5"), null);

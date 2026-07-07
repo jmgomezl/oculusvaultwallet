@@ -519,6 +519,7 @@ function Dashboard({
   const [backupDone, setBackupDone] = useState(false);
   const [copied, setCopied] = useState<string>("");
   const [reqAmount, setReqAmount] = useState<string>("");
+  const [reqAsset, setReqAsset] = useState<string>("hbar");
   const [requestMode, setRequestMode] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -541,7 +542,11 @@ function Dashboard({
     const poll = setInterval(refresh, 6000);
     const stop = wallet.onIncoming((t) => {
       haptic("success");
-      setToast(`Received ${formatHbar(t.amount)} ℏ`);
+      setToast(
+        t.token
+          ? `Received ${t.amount} ${t.token.symbol}`
+          : `Received ${formatHbar(t.amount)} ℏ`,
+      );
       refresh();
       setTimeout(() => setToast(""), 4000);
     });
@@ -571,8 +576,15 @@ function Dashboard({
   const usd = balance ? formatUsd(balance.usdEstimate) : null;
 
   if (view === "receive") {
+    const reqToken = tokens.find((t) => t.tokenId === reqAsset) ?? null;
+    const reqUnit = reqToken ? reqToken.symbol : "ℏ";
     const requestLink = BOT
-      ? buildPayLink(BOT, identity.evmAddress, reqAmount && Number(reqAmount) > 0 ? reqAmount : undefined)
+      ? buildPayLink(
+          BOT,
+          identity.evmAddress,
+          reqAmount && Number(reqAmount) > 0 ? reqAmount : undefined,
+          reqToken ? reqToken.tokenId : undefined,
+        )
       : null;
     const requesting = requestMode && requestLink != null;
     return (
@@ -585,7 +597,12 @@ function Dashboard({
           {requesting ? (
             <p className="muted small">
               <strong className="req-live">
-                Requesting{reqAmount && Number(reqAmount) > 0 ? ` ${formatHbar(reqAmount)} ℏ` : " payment"}
+                Requesting
+                {reqAmount && Number(reqAmount) > 0
+                  ? ` ${reqToken ? reqAmount : formatHbar(reqAmount)} ${reqUnit}`
+                  : reqToken
+                    ? ` ${reqToken.symbol}`
+                    : " payment"}
               </strong>{" "}
               — anyone scanning this with their camera lands in OculusVault
               with your details pre-filled.{" "}
@@ -614,9 +631,27 @@ function Dashboard({
               Send someone a link that opens OculusVault with your details
               pre-filled — they just confirm.
             </p>
+            {tokens.length > 0 && (
+              <select
+                className="input"
+                value={reqAsset}
+                aria-label="Asset to request"
+                onChange={(e) => {
+                  setReqAsset(e.target.value);
+                  setRequestMode(true);
+                }}
+              >
+                <option value="hbar">HBAR (ℏ)</option>
+                {tokens.map((t) => (
+                  <option key={t.tokenId} value={t.tokenId}>
+                    {t.symbol} — {t.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               className="input"
-              placeholder="Amount in HBAR (optional)"
+              placeholder={`Amount in ${reqToken ? reqToken.symbol : "HBAR"} (optional)`}
               inputMode="decimal"
               value={reqAmount}
               onChange={(e) => {
@@ -632,8 +667,10 @@ function Dashboard({
                   haptic("tap");
                   const label =
                     reqAmount && Number(reqAmount) > 0
-                      ? `Pay me ${formatHbar(reqAmount)} ℏ with OculusVault`
-                      : "Pay me with OculusVault";
+                      ? `Pay me ${reqToken ? reqAmount : formatHbar(reqAmount)} ${reqUnit} with OculusVault`
+                      : reqToken
+                        ? `Pay me ${reqToken.symbol} with OculusVault`
+                        : "Pay me with OculusVault";
                   openTelegramLink(
                     `https://t.me/share/url?url=${encodeURIComponent(requestLink)}&text=${encodeURIComponent(label)}`,
                   );
@@ -855,6 +892,13 @@ function SendTab({
   const [amount, setAmount] = useState(prefill?.amountHbar ?? "");
   /** "hbar" or an HTS token id (0.0.x) held by this wallet. */
   const [asset, setAsset] = useState<string>("hbar");
+  /** The user explicitly picked an asset — stop auto-following the intent. */
+  const [assetTouched, setAssetTouched] = useState(false);
+  /** A scanned/linked intent asked for a token (kept even if we don't hold it,
+   * so we can refuse to silently send HBAR instead). */
+  const [wantedToken, setWantedToken] = useState<string | null>(
+    prefill?.tokenId ?? null,
+  );
   const [stage, setStage] = useState<"edit" | "confirm">("edit");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
@@ -862,10 +906,22 @@ function SendTab({
   const token = asset === "hbar" ? null : tokens.find((t) => t.tokenId === asset) ?? null;
   const unit = token ? token.symbol : "ℏ";
 
+  // A token intent pre-selects that token once balances load (unless the
+  // user already chose an asset themselves).
+  useEffect(() => {
+    if (!wantedToken || assetTouched) return;
+    if (tokens.some((t) => t.tokenId === wantedToken)) setAsset(wantedToken);
+  }, [tokens, wantedToken, assetTouched]);
+
   const validate = (): string | null => {
     const t = to.trim();
     if (!/^0x[0-9a-fA-F]{40}$/.test(t) && !/^0\.0\.[0-9]+$/.test(t)) {
       return "Recipient must be a 0x address or 0.0.x account id.";
+    }
+    // A token was requested but we don't hold it and the user hasn't
+    // explicitly chosen another asset — never silently pay in HBAR instead.
+    if (wantedToken && !assetTouched && token == null) {
+      return `This request asks for token ${wantedToken}, which your wallet doesn’t hold. Enable/receive it first, or pick an asset yourself.`;
     }
     const a = Number(amount);
     if (!Number.isFinite(a) || a <= 0) return `Enter a positive ${unit} amount.`;
@@ -901,6 +957,9 @@ function SendTab({
     setMsg(null);
     setTo(intent.to);
     if (intent.amountHbar) setAmount(intent.amountHbar);
+    setWantedToken(intent.tokenId ?? null);
+    setAssetTouched(false);
+    if (!intent.tokenId) setAsset("hbar");
   };
 
   const send = async () => {
@@ -986,6 +1045,7 @@ function SendTab({
           aria-label="Asset to send"
           onChange={(e) => {
             setAsset(e.target.value);
+            setAssetTouched(true);
             setMsg(null);
           }}
         >
@@ -996,6 +1056,12 @@ function SendTab({
             </option>
           ))}
         </select>
+      )}
+      {wantedToken && !assetTouched && token == null && (
+        <p className="error xsmall">
+          This request asks for token {wantedToken}, which your wallet doesn’t
+          hold — enable it in Tokens first, or pick an asset above.
+        </p>
       )}
       <div className="input-row">
         <input
@@ -1121,7 +1187,12 @@ function TokensCard({
             <strong>{t.symbol}</strong>{" "}
             <span className="muted xsmall">{t.name}</span>
           </span>
-          <span className="amt">{t.balance}</span>
+          <span className="amt">
+            {t.balance}
+            {t.usdEstimate != null && (
+              <span className="muted xsmall"> {formatUsd(t.usdEstimate)}</span>
+            )}
+          </span>
         </div>
       ))}
       {!accountReady ? (
@@ -1226,7 +1297,7 @@ function HistoryList({ items }: { items: HistoryItem[] }) {
           </span>
           <span className={it.direction === "in" ? "amt in" : "amt out"}>
             {it.direction === "in" ? "+" : ""}
-            {formatHbar(it.amount)} ℏ
+            {it.token ? `${it.amount} ${it.token.symbol}` : `${formatHbar(it.amount)} ℏ`}
           </span>
           <span className="muted xsmall row-when">
             {new Date(it.timestamp).toLocaleString()}

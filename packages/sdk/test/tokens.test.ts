@@ -92,11 +92,114 @@ test("getTokenBalances joins metadata, formats amounts, drops NFTs", async () =>
     type: "FUNGIBLE_COMMON",
     balanceRaw: 12_500_000n,
     balance: "12.5",
+    usdEstimate: 12.5,
   });
   // Metadata is cached: a second read must not refetch (stub would still
   // answer, so assert via cache identity instead).
   const again = await mirror.getTokenInfo("0.0.429274");
   assert.equal(again.symbol, "USDC");
+});
+
+/** Mirror stub for history: one pure token send (fee-only HBAR), one HBAR
+ * receive, one mixed HBAR+token tx. */
+function historyFetchStub(url: RequestInfo | URL): Promise<Response> {
+  const u = String(url);
+  const json = (body: unknown) =>
+    Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+  if (u.includes("/api/v1/tokens/0.0.429274")) {
+    return json({
+      token_id: "0.0.429274",
+      name: "USD Coin",
+      symbol: "USDC",
+      decimals: "6",
+      type: "FUNGIBLE_COMMON",
+    });
+  }
+  if (u.includes("/api/v1/transactions")) {
+    return json({
+      transactions: [
+        {
+          // I sent 5 USDC; my only HBAR movement is the fee → no HBAR row.
+          transaction_id: "0.0.111@1700000001.000000000",
+          consensus_timestamp: "1700000001.000000000",
+          charged_tx_fee: 183642,
+          transfers: [
+            { account: "0.0.111", amount: -183642 },
+            { account: "0.0.3", amount: 30000 },
+            { account: "0.0.98", amount: 153642 },
+          ],
+          token_transfers: [
+            { token_id: "0.0.429274", account: "0.0.111", amount: -5_000_000 },
+            { token_id: "0.0.429274", account: "0.0.222", amount: 5_000_000 },
+          ],
+        },
+        {
+          // Plain 2 ℏ receive.
+          transaction_id: "0.0.999@1700000002.000000000",
+          consensus_timestamp: "1700000002.000000000",
+          charged_tx_fee: 100000,
+          transfers: [
+            { account: "0.0.999", amount: -200_100_000 },
+            { account: "0.0.111", amount: 200_000_000 },
+          ],
+          token_transfers: [],
+        },
+        {
+          // Mixed: I received 1 ℏ AND 2.5 USDC in one tx → two rows.
+          transaction_id: "0.0.999@1700000003.000000000",
+          consensus_timestamp: "1700000003.000000000",
+          charged_tx_fee: 100000,
+          transfers: [
+            { account: "0.0.999", amount: -100_100_000 },
+            { account: "0.0.111", amount: 100_000_000 },
+          ],
+          token_transfers: [
+            { token_id: "0.0.429274", account: "0.0.999", amount: -2_500_000 },
+            { token_id: "0.0.429274", account: "0.0.111", amount: 2_500_000 },
+          ],
+        },
+      ],
+    });
+  }
+  return Promise.resolve(new Response("{}", { status: 404 }));
+}
+
+test("getHistory includes token transfers and hides fee-only HBAR rows", async () => {
+  const mirror = new MirrorClient(
+    getNetworkConfig("testnet"),
+    historyFetchStub as typeof fetch,
+  );
+  const items = await mirror.getHistory("0.0.111");
+  assert.equal(items.length, 4);
+
+  // Tx 1: token row only — the fee-only HBAR debit is suppressed.
+  const [usdcOut, hbarIn, hbarMixed, usdcMixed] = items;
+  assert.equal(usdcOut!.token?.symbol, "USDC");
+  assert.equal(usdcOut!.amount, "-5");
+  assert.equal(usdcOut!.direction, "out");
+  assert.equal(usdcOut!.counterparty, "0.0.222");
+
+  // Tx 2: plain HBAR receive, no token field.
+  assert.equal(hbarIn!.token, undefined);
+  assert.equal(hbarIn!.amount, "2.00000000");
+  assert.equal(hbarIn!.direction, "in");
+
+  // Tx 3: both movements surface as two rows.
+  assert.equal(hbarMixed!.token, undefined);
+  assert.equal(hbarMixed!.direction, "in");
+  assert.equal(usdcMixed!.token?.tokenId, "0.0.429274");
+  assert.equal(usdcMixed!.amount, "2.5");
+  assert.equal(usdcMixed!.direction, "in");
+});
+
+test("getTokenBalances sets usdEstimate 1:1 for USDC only", async () => {
+  const mirror = new MirrorClient(
+    getNetworkConfig("testnet"),
+    mirrorFetchStub as typeof fetch,
+  );
+  const tokens = await mirror.getTokenBalances("0.0.111");
+  assert.equal(tokens[0]!.symbol, "USDC");
+  assert.equal(tokens[0]!.usdEstimate, 12.5);
 });
 
 test("wallet.getTokenBalances is [] before the account exists", async () => {
