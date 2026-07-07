@@ -98,6 +98,13 @@ export {
 export { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";
 export { setStaking, type SetStakingArgs } from "./hedera/staking.js";
 export { describeTransaction } from "./hedera/describe.js";
+export {
+  EVM_CHAIN_IDS,
+  hbarToWeibar,
+  weibarToHbar,
+  entityEvmAddress,
+  erc20TransferData,
+} from "./hedera/evm.js";
 
 // Telegram client helpers
 export {

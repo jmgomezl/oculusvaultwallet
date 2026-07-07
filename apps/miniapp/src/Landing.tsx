@@ -32,6 +32,7 @@ export function Landing() {
         <div className="lp-nav-links">
           <a href="#how">How it works</a>
           <a href="#security">Security</a>
+          <a href="/hardware.html">Ledger</a>
           <a href={GITHUB} target="_blank" rel="noreferrer">
             GitHub
           </a>

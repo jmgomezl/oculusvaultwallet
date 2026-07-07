@@ -322,8 +322,16 @@ same interface and pass it to `OculusVault` — nothing else changes.
 - ✅ **Native staking** to a network node (no lockup) and a third-party
   **buy-HBAR entry** on mainnet (MoonPay link — the wallet never touches
   fiat).
-- 🚫 No swaps/DeFi *yet* — planned as dApp connectivity (WalletConnect) so
-  DEXes integrate the wallet, rather than the wallet reimplementing a DEX.
+- ✅ **Ledger hardware support** (oculusvault.com/hardware.html, desktop):
+  bypasses the limited Hedera Ledger app entirely — the Ledger **Ethereum**
+  app signs EVM transactions to the JSON-RPC relay, and the device's
+  secp256k1 key *is* a Hedera account. Receive ANY HTS token with zero
+  signing (HIP-904 unlimited auto-association), send HBAR, send tokens via
+  their ERC-20 facade, execute smart contracts. Keys never leave the device.
+- ✅ **WalletConnect (HIP-820) signer** in the Mini App (env-gated on
+  `VITE_WC_PROJECT_ID`): dApps like SaucerSwap use the wallet as their
+  signer — swaps/DeFi happen on the dApp's own UI, this wallet only shows
+  and approves what gets signed.
 - 🚫 No previewnet USDC: Circle doesn't mint USDC on previewnet (it resets
   regularly) — the Tokens card degrades to add-by-id there automatically.
 
