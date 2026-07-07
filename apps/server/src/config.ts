@@ -50,6 +50,9 @@ export const config = {
   vaultDataDir: process.env.VAULT_DATA_DIR ?? "./data",
   /** Reject vault records larger than this (ciphertext is ~1 KB). */
   vaultMaxBytes: Number(process.env.VAULT_MAX_BYTES ?? 16_384),
+  /** DM users via the bot when their wallet receives a payment. */
+  notifyEnabled: process.env.NOTIFY_ENABLED === "true",
+  notifyIntervalMs: Number(process.env.NOTIFY_INTERVAL_MS ?? 60_000),
 };
 
 export function assertProdSafety(): void {

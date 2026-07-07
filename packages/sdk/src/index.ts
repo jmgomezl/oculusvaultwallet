@@ -24,6 +24,8 @@ export type {
   SendResult,
   TokenInfo,
   TokenBalance,
+  StakingInfo,
+  NetworkNode,
   EncryptedWalletRecord,
   KdfParams,
   SecretSource,
@@ -67,6 +69,12 @@ export {
   getPasskeySecret,
   type PasskeyOptions,
 } from "./crypto/passkey.js";
+export {
+  createPasskeyQuickUnlock,
+  unlockWithPasskeyQuickUnlock,
+  wrapKeyWithSecret,
+  unwrapKeyWithSecret,
+} from "./crypto/quickUnlock.js";
 
 // Hedera helpers
 export {
@@ -85,6 +93,7 @@ export {
   type AssociateTokenArgs,
 } from "./hedera/tokens.js";
 export { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";
+export { setStaking, type SetStakingArgs } from "./hedera/staking.js";
 
 // Telegram client helpers
 export {

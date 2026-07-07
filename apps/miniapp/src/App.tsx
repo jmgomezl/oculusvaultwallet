@@ -21,6 +21,11 @@ import {
   openTelegramLink,
   fromPrivateKey,
   USDC_TOKEN_IDS,
+  isPasskeyPrfLikelySupported,
+  createPasskeyQuickUnlock,
+  unlockWithPasskeyQuickUnlock,
+  type NetworkNode,
+  type StakingInfo,
 } from "@oculusvault/sdk";
 import { authenticate, isDemoMode, type AuthResult } from "./api.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
@@ -66,6 +71,29 @@ function shortAddr(a: string): string {
   return a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a;
 }
 
+/** Device-local passkey quick-unlock record (per user). The password-encrypted
+ * vault record stays canonical; this only caches a passkey-wrapped copy. */
+const pkqKey = (uid: string) => `oculusvault:pkq:${uid}`;
+
+/** Recent send recipients, per network, most-recent-first, max 5. */
+const recentsKey = (net: HederaNetwork) => `oculusvault:recents:${net}`;
+function loadRecents(net: HederaNetwork): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(recentsKey(net)) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function pushRecent(net: HederaNetwork, addr: string): void {
+  try {
+    const list = [addr, ...loadRecents(net).filter((a) => a !== addr)].slice(0, 5);
+    localStorage.setItem(recentsKey(net), JSON.stringify(list));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 /**
  * Router — one rule, no exceptions: the wallet exists only inside Telegram,
  * where a verified identity exists. Everything else sees the product page.
@@ -86,6 +114,8 @@ function WalletApp() {
   const [askMainnet, setAskMainnet] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [storedAddr, setStoredAddr] = useState<string | null>(null);
+  const [pkRecord, setPkRecord] = useState<string | null>(null);
+  const [pkOffer, setPkOffer] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -95,12 +125,28 @@ function WalletApp() {
         walletRef.current = createWallet(loadSavedNetwork());
         const exists = await walletRef.current.hasWallet(a.userId);
         setIsNew(!exists);
+        try {
+          setPkRecord(localStorage.getItem(pkqKey(a.userId)));
+        } catch {
+          /* storage unavailable */
+        }
         setPhase("locked");
       } catch (e) {
         setError((e as Error).message);
         setPhase("error");
       }
     })();
+  }, []);
+
+  /** Offer Face ID after a secret-based unlock if the device can and no
+   * quick-unlock record exists yet. */
+  const maybeOfferPasskey = useCallback(async (uid: string) => {
+    try {
+      if (localStorage.getItem(pkqKey(uid))) return;
+      if (await isPasskeyPrfLikelySupported()) setPkOffer(true);
+    } catch {
+      /* fine — password-only */
+    }
   }, []);
 
   const onUnlock = useCallback(
@@ -113,9 +159,56 @@ function WalletApp() {
       haptic("success");
       setIdentity(id);
       setPhase("ready");
+      void maybeOfferPasskey(auth.userId);
     },
-    [auth],
+    [auth, maybeOfferPasskey],
   );
+
+  /** Face ID / passkey unlock via the device-local record. Any failure falls
+   * back to the password path with an explanation; a record that decrypts to
+   * a DIFFERENT wallet than the vault holds is stale and gets dropped. */
+  const onPasskeyUnlock = useCallback(async () => {
+    const wallet = walletRef.current;
+    if (!wallet || !auth || !pkRecord) return;
+    const unwrapped = await unlockWithPasskeyQuickUnlock(pkRecord, {
+      rpId: window.location.hostname,
+    });
+    if (!unwrapped) throw new Error("Passkey didn’t work here — use your password.");
+    const vaultAddr = await wallet.storedAddress(auth.userId);
+    if (vaultAddr && vaultAddr.toLowerCase() !== unwrapped.evmAddress.toLowerCase()) {
+      try {
+        localStorage.removeItem(pkqKey(auth.userId));
+      } catch { /* fine */ }
+      setPkRecord(null);
+      throw new Error(
+        "This device’s Face ID copy belongs to an older wallet — unlock with your password to refresh it.",
+      );
+    }
+    const id = await wallet.unlockWithKey(unwrapped.privateKeyHex, auth.userId);
+    haptic("success");
+    setIdentity(id);
+    setPhase("ready");
+  }, [auth, pkRecord]);
+
+  const onEnablePasskey = useCallback(async () => {
+    const wallet = walletRef.current;
+    if (!wallet || !auth || !identity) return;
+    const rec = await createPasskeyQuickUnlock({
+      privateKeyHex: await wallet.exportKey(),
+      evmAddress: identity.evmAddress,
+      passkey: {
+        rpId: window.location.hostname,
+        rpName: "OculusVault",
+        userId: auth.userId,
+        userName: auth.user.username ? `@${auth.user.username}` : "OculusVault",
+      },
+    });
+    if (!rec) throw new Error("This device’s passkey doesn’t support it — password it is.");
+    localStorage.setItem(pkqKey(auth.userId), rec);
+    setPkRecord(rec);
+    setPkOffer(false);
+    haptic("success");
+  }, [auth, identity]);
 
   const startRecover = useCallback(async () => {
     if (!walletRef.current || !auth) return;
@@ -131,12 +224,18 @@ function WalletApp() {
         privateKeyHex,
         secret: { source: "password", value: newPassword },
       });
+      // The key may have changed — any device-local passkey copy is stale.
+      try {
+        localStorage.removeItem(pkqKey(auth.userId));
+      } catch { /* fine */ }
+      setPkRecord(null);
       haptic("success");
       setIdentity(id);
       setRecovering(false);
       setPhase("ready");
+      void maybeOfferPasskey(auth.userId);
     },
-    [auth],
+    [auth, maybeOfferPasskey],
   );
 
   /** Same key = same address on every network, so switching is instant. */
@@ -203,6 +302,7 @@ function WalletApp() {
         username={auth?.user.username}
         onUnlock={onUnlock}
         onRecover={startRecover}
+        onPasskeyUnlock={!isNew && pkRecord ? onPasskeyUnlock : undefined}
       />
     );
   }
@@ -231,6 +331,9 @@ function WalletApp() {
         freshWallet={isNew}
         network={network}
         onSwitchNetwork={requestSwitch}
+        passkeyOffer={pkOffer}
+        onEnablePasskey={onEnablePasskey}
+        onDismissPasskey={() => setPkOffer(false)}
       />
     </>
   );
@@ -278,11 +381,13 @@ function UnlockScreen({
   username,
   onUnlock,
   onRecover,
+  onPasskeyUnlock,
 }: {
   isNew: boolean;
   username?: string;
   onUnlock: (pw: string) => Promise<void>;
   onRecover: () => void;
+  onPasskeyUnlock?: () => Promise<void>;
 }) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -296,6 +401,20 @@ function UnlockScreen({
     setBusy(true);
     try {
       await onUnlock(pw);
+    } catch (e) {
+      haptic("error");
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const passkey = async () => {
+    if (!onPasskeyUnlock) return;
+    setErr("");
+    setBusy(true);
+    try {
+      await onPasskeyUnlock();
     } catch (e) {
       haptic("error");
       setErr((e as Error).message);
@@ -318,12 +437,20 @@ function UnlockScreen({
           : `${username ? "@" + username + " · " : ""}Enter your password to unlock.`}
       </p>
       <div className="card">
+        {onPasskeyUnlock && (
+          <>
+            <button className="btn primary" disabled={busy} onClick={passkey}>
+              {busy ? "Working…" : "🔓 Unlock with Face ID / passkey"}
+            </button>
+            <p className="muted xsmall">or use your password:</p>
+          </>
+        )}
         <input
           className="input"
           type="password"
           placeholder="Password"
           value={pw}
-          autoFocus
+          autoFocus={!onPasskeyUnlock}
           onChange={(e) => setPw(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !isNew && submit()}
         />
@@ -498,6 +625,9 @@ function Dashboard({
   freshWallet,
   network,
   onSwitchNetwork,
+  passkeyOffer,
+  onEnablePasskey,
+  onDismissPasskey,
 }: {
   wallet: OculusVault;
   identity: WalletIdentity;
@@ -505,6 +635,9 @@ function Dashboard({
   freshWallet: boolean;
   network: HederaNetwork;
   onSwitchNetwork: (n: HederaNetwork) => void;
+  passkeyOffer: boolean;
+  onEnablePasskey: () => Promise<void>;
+  onDismissPasskey: () => void;
 }) {
   // A pay deep-link (NFC tag / QR / t.me link) jumps straight to Send.
   const [intent] = useState<PayIntent | null>(() =>
@@ -768,6 +901,10 @@ function Dashboard({
         </div>
       )}
 
+      {passkeyOffer && (
+        <PasskeyOfferBanner onEnable={onEnablePasskey} onDismiss={onDismissPasskey} />
+      )}
+
       {freshWallet && !backupDone && (
         <div className="banner">
           <div>
@@ -846,6 +983,11 @@ function Dashboard({
         network={network}
         accountReady={identity.hederaAccountId != null}
         onChanged={refresh}
+      />
+      <StakeCard
+        wallet={wallet}
+        network={network}
+        accountReady={identity.hederaAccountId != null}
       />
       <HistoryList items={history} />
       <ExportRow
@@ -969,6 +1111,7 @@ function SendTab({
       const r = token
         ? await wallet.sendToken(token.tokenId, to.trim(), amount.trim())
         : await wallet.send(to.trim(), amount.trim());
+      pushRecent(network, to.trim());
       haptic("success");
       setMsg({
         ok: true,
@@ -1076,6 +1219,16 @@ function SendTab({
           </button>
         )}
       </div>
+      {!to && loadRecents(network).length > 0 && (
+        <div className="id-row">
+          <span className="muted xsmall">Recent:</span>
+          {loadRecents(network).map((addr) => (
+            <button key={addr} className="chip" onClick={() => setTo(addr)}>
+              {shortAddr(addr)}
+            </button>
+          ))}
+        </div>
+      )}
       <input
         className="input"
         placeholder={token ? `Amount (${token.symbol})` : "Amount (HBAR)"}
@@ -1280,17 +1433,16 @@ function TokensCard({
 }
 
 function HistoryList({ items }: { items: HistoryItem[] }) {
+  const [detail, setDetail] = useState<HistoryItem | null>(null);
   return (
     <div className="card">
       <h3>History</h3>
       {items.length === 0 && <p className="muted small">No transactions yet.</p>}
       {items.map((it) => (
-        <a
-          key={it.transactionId + it.consensusTimestamp}
+        <button
+          key={it.transactionId + it.consensusTimestamp + (it.token?.tokenId ?? "")}
           className="row"
-          href={it.hashscanUrl}
-          target="_blank"
-          rel="noreferrer"
+          onClick={() => setDetail(it)}
         >
           <span className={it.direction === "in" ? "row-glyph in" : "row-glyph out"}>
             {it.direction === "in" ? "↓" : "↑"}
@@ -1302,9 +1454,262 @@ function HistoryList({ items }: { items: HistoryItem[] }) {
           <span className="muted xsmall row-when">
             {new Date(it.timestamp).toLocaleString()}
           </span>
-          <span className="link xsmall">↗</span>
-        </a>
+          <span className="link xsmall">›</span>
+        </button>
       ))}
+      {detail && <TxDetail item={detail} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
+
+/** Transaction detail — the receipt view, so Hashscan is a choice, not a need. */
+function TxDetail({ item, onClose }: { item: HistoryItem; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="card modal" onClick={(e) => e.stopPropagation()}>
+        <h2>
+          {item.direction === "in" ? "Received" : "Sent"}{" "}
+          <span className={item.direction === "in" ? "amt in" : "amt out"}>
+            {item.direction === "in" ? "+" : ""}
+            {item.token ? `${item.amount} ${item.token.symbol}` : `${formatHbar(item.amount)} ℏ`}
+          </span>
+        </h2>
+        <div className="confirm-row">
+          <span className="muted small">{item.direction === "in" ? "From" : "To"}</span>
+          <code className="addr">{item.counterparty ? shortAddr(item.counterparty) : "—"}</code>
+        </div>
+        {item.token && (
+          <div className="confirm-row">
+            <span className="muted small">Token</span>
+            <code className="addr">{item.token.tokenId}</code>
+          </div>
+        )}
+        {item.memo && (
+          <div className="confirm-row">
+            <span className="muted small">Memo</span>
+            <span className="small">{item.memo}</span>
+          </div>
+        )}
+        <div className="confirm-row">
+          <span className="muted small">When</span>
+          <span className="small">{new Date(item.timestamp).toLocaleString()}</span>
+        </div>
+        <div className="confirm-row">
+          <span className="muted small">Tx</span>
+          <code className="addr">{shortAddr(item.transactionId)}</code>
+        </div>
+        <a className="btn" href={item.hashscanUrl} target="_blank" rel="noreferrer">
+          View on Hashscan ↗
+        </a>
+        <button className="btn ghost" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** One-time offer to add Face ID quick unlock on this device. */
+function PasskeyOfferBanner({
+  onEnable,
+  onDismiss,
+}: {
+  onEnable: () => Promise<void>;
+  onDismiss: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const enable = async () => {
+    setErr("");
+    setBusy(true);
+    try {
+      await onEnable();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="banner">
+      <div>
+        <strong>Unlock with Face ID next time.</strong>
+        <span className="muted small">
+          {" "}Adds a passkey on this device only — your password keeps working
+          everywhere, and stays the real backup.
+        </span>
+        {err && <p className="error xsmall">{err}</p>}
+      </div>
+      <div className="banner-actions">
+        <button className="btn sm" disabled={busy} onClick={enable}>
+          {busy ? "Setting up…" : "Enable"}
+        </button>
+        <button className="btn ghost sm" disabled={busy} onClick={onDismiss}>
+          Not now
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Native staking — stake the whole balance to a node with one transaction.
+ * Nothing moves, nothing locks; rewards accrue daily and arrive with the
+ * account's next transaction.
+ */
+function StakeCard({
+  wallet,
+  network,
+  accountReady,
+}: {
+  wallet: OculusVault;
+  network: HederaNetwork;
+  accountReady: boolean;
+}) {
+  const [info, setInfo] = useState<StakingInfo | null>(null);
+  const [nodes, setNodes] = useState<NetworkNode[]>([]);
+  const [choosing, setChoosing] = useState(false);
+  const [selNode, setSelNode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setInfo(await wallet.getStakingInfo());
+    } catch {
+      /* transient mirror failure — leave as-is */
+    }
+  }, [wallet]);
+
+  useEffect(() => {
+    if (accountReady) void load();
+  }, [accountReady, load]);
+
+  const openChooser = async () => {
+    setMsg(null);
+    setChoosing(true);
+    if (nodes.length === 0) {
+      try {
+        const n = await wallet.getNetworkNodes();
+        setNodes(n);
+        if (n.length > 0) setSelNode(String(n[0]!.nodeId));
+      } catch {
+        setMsg({ ok: false, text: "Couldn’t load the node list — try again." });
+        setChoosing(false);
+      }
+    }
+  };
+
+  const stake = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.stakeToNode(Number(selNode));
+      haptic("success");
+      setMsg({ ok: true, text: `Staked to node ${selNode} · ${r.status}`, url: r.hashscanUrl });
+      setChoosing(false);
+      await load();
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stop = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.stopStaking();
+      haptic("success");
+      setMsg({ ok: true, text: `Staking stopped · ${r.status}`, url: r.hashscanUrl });
+      await load();
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3>Staking</h3>
+      {!accountReady ? (
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> Staking unlocks once
+          your account exists — receive any HBAR first.
+        </p>
+      ) : info?.stakedNodeId != null ? (
+        <>
+          <div className="acct-row">
+            <span>
+              <strong>Node {info.stakedNodeId}</strong>{" "}
+              <span className="muted xsmall">
+                {nodes.find((n) => n.nodeId === info.stakedNodeId)?.description ?? ""}
+              </span>
+            </span>
+            <span className="amt">
+              +{formatHbar(info.pendingRewardHbar)} ℏ{" "}
+              <span className="muted xsmall">pending</span>
+            </span>
+          </div>
+          <p className="muted xsmall">
+            Your balance is staked{network === "mainnet" ? " and earning" : ""} —
+            nothing is locked, spending works normally. Rewards arrive with your
+            next transaction.
+          </p>
+          <button className="btn ghost" disabled={busy} onClick={stop}>
+            {busy ? "Working…" : "Stop staking"}
+          </button>
+        </>
+      ) : !choosing ? (
+        <>
+          <p className="muted small">
+            Stake your balance to a network node and earn rewards — nothing
+            leaves your wallet, nothing locks up.
+          </p>
+          <button className="btn" disabled={busy} onClick={openChooser}>
+            Stake my balance
+          </button>
+        </>
+      ) : (
+        <>
+          <select
+            className="input"
+            value={selNode}
+            aria-label="Node to stake to"
+            onChange={(e) => setSelNode(e.target.value)}
+          >
+            {nodes.map((n) => (
+              <option key={n.nodeId} value={String(n.nodeId)}>
+                Node {n.nodeId} — {n.description}
+              </option>
+            ))}
+          </select>
+          <p className="muted xsmall">
+            One small on-ledger fee (~$0.02 in ℏ). You can stop or switch nodes
+            anytime.
+          </p>
+          <button className="btn primary" disabled={busy || !selNode} onClick={stake}>
+            {busy ? "Staking…" : `Stake to node ${selNode}`}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={() => setChoosing(false)}>
+            Cancel
+          </button>
+        </>
+      )}
+      {msg && (
+        <p className={msg.ok ? "success" : "error"}>
+          {msg.text}{" "}
+          {msg.url && (
+            <a className="link" href={msg.url} target="_blank" rel="noreferrer">
+              View ↗
+            </a>
+          )}
+        </p>
+      )}
     </div>
   );
 }

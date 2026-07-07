@@ -39,6 +39,8 @@ type Authed = Request & { session?: SessionClaims };
 export interface AppDeps {
   /** Inject a clock for tests. */
   now?: () => number;
+  /** Share a VaultStore with other components (e.g. the payment notifier). */
+  vault?: VaultStore;
 }
 
 /** Minimal in-memory per-IP rate limiter (fixed window). Dependency-free so
@@ -84,7 +86,7 @@ export function createApp(deps: AppDeps = {}): Express {
   const vaultLimiter = rateLimit(60, 60_000);
 
   const mirror = new MirrorClient(getNetworkConfig(config.network));
-  const vault = new VaultStore(config.vaultDataDir);
+  const vault = deps.vault ?? new VaultStore(config.vaultDataDir);
 
   const issueSession = (claims: SessionClaims): string =>
     jwt.sign(claims, config.sessionSecret, {

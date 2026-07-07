@@ -3,7 +3,14 @@
  * transfer history, and incoming-transfer polling. No SDK/gRPC needed for
  * reads — plain HTTP works in the browser and Node alike.
  */
-import type { Balance, HistoryItem, TokenBalance, TokenInfo } from "../types.js";
+import type {
+  Balance,
+  HistoryItem,
+  NetworkNode,
+  StakingInfo,
+  TokenBalance,
+  TokenInfo,
+} from "../types.js";
 import { base64urlToBytes } from "../crypto/encoding.js";
 import { USDC_TOKEN_IDS } from "./knownTokens.js";
 import { formatTokenAmount } from "./tokenAmount.js";
@@ -108,6 +115,29 @@ export class MirrorClient {
       tinybar,
       usdEstimate: rate == null ? null : Number(hbar) * rate,
     };
+  }
+
+  /** Native-staking state of an account (node, pending reward). */
+  async getStakingInfo(accountId: string): Promise<StakingInfo> {
+    const data = await this.get<any>(
+      `/api/v1/accounts/${encodeURIComponent(accountId)}?limit=1`,
+    );
+    const pending = BigInt(data.pending_reward ?? 0);
+    return {
+      stakedNodeId: data.staked_node_id ?? null,
+      pendingRewardTinybar: pending,
+      pendingRewardHbar: tinybarToHbar(pending),
+      declineReward: Boolean(data.decline_reward),
+    };
+  }
+
+  /** Consensus nodes available to stake to. */
+  async getNetworkNodes(): Promise<NetworkNode[]> {
+    const data = await this.get<any>("/api/v1/network/nodes?limit=100");
+    return (data.nodes ?? []).map((n: any) => ({
+      nodeId: Number(n.node_id),
+      description: String(n.description ?? `Node ${n.node_id}`),
+    }));
   }
 
   /** Public metadata of an HTS token (name/symbol/decimals), cached. */

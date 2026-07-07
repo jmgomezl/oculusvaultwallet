@@ -10,6 +10,8 @@ import {
   type Balance,
   type HederaNetwork,
   type HistoryItem,
+  type NetworkNode,
+  type StakingInfo,
   type TokenBalance,
   type TokenInfo,
   type WalletIdentity,
@@ -56,6 +58,25 @@ function shortAddr(a: string): string {
 }
 function isAuthError(e: unknown): boolean {
   return /\b401\b/.test(String((e as Error)?.message ?? e));
+}
+
+/** Recent send recipients, per network, most-recent-first, max 5. */
+const recentsKey = (net: HederaNetwork) => `ovext:recents:${net}`;
+function loadRecents(net: HederaNetwork): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(recentsKey(net)) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function pushRecent(net: HederaNetwork, addr: string): void {
+  try {
+    const list = [addr, ...loadRecents(net).filter((a) => a !== addr)].slice(0, 5);
+    localStorage.setItem(recentsKey(net), JSON.stringify(list));
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 type Phase = "loading" | "connect" | "locked" | "ready";
@@ -672,23 +693,12 @@ function Dashboard({
         onChanged={refresh}
       />
 
-      <div className="card">
-        <h3>History</h3>
-        {history.length === 0 && <p className="muted small">No transactions yet.</p>}
-        {history.map((it) => (
-          <a key={it.transactionId + it.consensusTimestamp} className="row" href={it.hashscanUrl} target="_blank" rel="noreferrer">
-            <span className={it.direction === "in" ? "row-glyph in" : "row-glyph out"}>
-              {it.direction === "in" ? "↓" : "↑"}
-            </span>
-            <span className={it.direction === "in" ? "amt in" : "amt out"}>
-              {it.direction === "in" ? "+" : ""}
-              {it.token ? `${it.amount} ${it.token.symbol}` : `${formatHbar(it.amount)} ℏ`}
-            </span>
-            <span className="muted xsmall row-when">{new Date(it.timestamp).toLocaleString()}</span>
-            <span className="link xsmall">↗</span>
-          </a>
-        ))}
-      </div>
+      <StakeCard
+        wallet={wallet}
+        accountReady={identity.hederaAccountId != null}
+      />
+
+      <HistoryList items={history} />
 
       <ExportCard
         open={exportOpen}
@@ -1060,6 +1070,235 @@ function TokensCard({
   );
 }
 
+function HistoryList({ items }: { items: HistoryItem[] }) {
+  const [detail, setDetail] = useState<HistoryItem | null>(null);
+  return (
+    <div className="card">
+      <h3>History</h3>
+      {items.length === 0 && <p className="muted small">No transactions yet.</p>}
+      {items.map((it) => (
+        <button
+          key={it.transactionId + it.consensusTimestamp + (it.token?.tokenId ?? "")}
+          className="row"
+          onClick={() => setDetail(it)}
+        >
+          <span className={it.direction === "in" ? "row-glyph in" : "row-glyph out"}>
+            {it.direction === "in" ? "↓" : "↑"}
+          </span>
+          <span className={it.direction === "in" ? "amt in" : "amt out"}>
+            {it.direction === "in" ? "+" : ""}
+            {it.token ? `${it.amount} ${it.token.symbol}` : `${formatHbar(it.amount)} ℏ`}
+          </span>
+          <span className="muted xsmall row-when">{new Date(it.timestamp).toLocaleString()}</span>
+          <span className="link xsmall">›</span>
+        </button>
+      ))}
+      {detail && <TxDetail item={detail} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
+
+/** Transaction detail — the receipt view, so Hashscan is a choice, not a need. */
+function TxDetail({ item, onClose }: { item: HistoryItem; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="card modal" onClick={(e) => e.stopPropagation()}>
+        <h2>
+          {item.direction === "in" ? "Received" : "Sent"}{" "}
+          <span className={item.direction === "in" ? "amt in" : "amt out"}>
+            {item.direction === "in" ? "+" : ""}
+            {item.token ? `${item.amount} ${item.token.symbol}` : `${formatHbar(item.amount)} ℏ`}
+          </span>
+        </h2>
+        <div className="confirm-row">
+          <span className="muted small">{item.direction === "in" ? "From" : "To"}</span>
+          <code className="addr">{item.counterparty ? shortAddr(item.counterparty) : "—"}</code>
+        </div>
+        {item.token && (
+          <div className="confirm-row">
+            <span className="muted small">Token</span>
+            <code className="addr">{item.token.tokenId}</code>
+          </div>
+        )}
+        {item.memo && (
+          <div className="confirm-row">
+            <span className="muted small">Memo</span>
+            <span className="small">{item.memo}</span>
+          </div>
+        )}
+        <div className="confirm-row">
+          <span className="muted small">When</span>
+          <span className="small">{new Date(item.timestamp).toLocaleString()}</span>
+        </div>
+        <div className="confirm-row">
+          <span className="muted small">Tx</span>
+          <code className="addr">{shortAddr(item.transactionId)}</code>
+        </div>
+        <a className="btn" href={item.hashscanUrl} target="_blank" rel="noreferrer">
+          View on Hashscan ↗
+        </a>
+        <button className="btn ghost" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Native staking — stake the whole balance to a node with one transaction.
+ * Nothing moves, nothing locks; rewards accrue daily.
+ */
+function StakeCard({
+  wallet,
+  accountReady,
+}: {
+  wallet: OculusVault;
+  accountReady: boolean;
+}) {
+  const [info, setInfo] = useState<StakingInfo | null>(null);
+  const [nodes, setNodes] = useState<NetworkNode[]>([]);
+  const [choosing, setChoosing] = useState(false);
+  const [selNode, setSelNode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setInfo(await wallet.getStakingInfo());
+    } catch {
+      /* transient mirror failure */
+    }
+  }, [wallet]);
+
+  useEffect(() => {
+    if (accountReady) void load();
+  }, [accountReady, load]);
+
+  const openChooser = async () => {
+    setMsg(null);
+    setChoosing(true);
+    if (nodes.length === 0) {
+      try {
+        const n = await wallet.getNetworkNodes();
+        setNodes(n);
+        if (n.length > 0) setSelNode(String(n[0]!.nodeId));
+      } catch {
+        setMsg({ ok: false, text: "Couldn’t load the node list — try again." });
+        setChoosing(false);
+      }
+    }
+  };
+
+  const stake = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.stakeToNode(Number(selNode));
+      setMsg({ ok: true, text: `Staked to node ${selNode} · ${r.status}`, url: r.hashscanUrl });
+      setChoosing(false);
+      await load();
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stop = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.stopStaking();
+      setMsg({ ok: true, text: `Staking stopped · ${r.status}`, url: r.hashscanUrl });
+      await load();
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3>Staking</h3>
+      {!accountReady ? (
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> Staking unlocks once
+          your account exists — receive any HBAR first.
+        </p>
+      ) : info?.stakedNodeId != null ? (
+        <>
+          <div className="acct-row">
+            <span>
+              <strong>Node {info.stakedNodeId}</strong>{" "}
+              <span className="muted xsmall">
+                {nodes.find((n) => n.nodeId === info.stakedNodeId)?.description ?? ""}
+              </span>
+            </span>
+            <span className="amt">
+              +{formatHbar(info.pendingRewardHbar)} ℏ{" "}
+              <span className="muted xsmall">pending</span>
+            </span>
+          </div>
+          <p className="muted xsmall">
+            Your balance is staked — nothing is locked, spending works
+            normally. Rewards arrive with your next transaction.
+          </p>
+          <button className="btn ghost" disabled={busy} onClick={stop}>
+            {busy ? "Working…" : "Stop staking"}
+          </button>
+        </>
+      ) : !choosing ? (
+        <>
+          <p className="muted small">
+            Stake your balance to a network node and earn rewards — nothing
+            leaves your wallet, nothing locks up.
+          </p>
+          <button className="btn" disabled={busy} onClick={openChooser}>
+            Stake my balance
+          </button>
+        </>
+      ) : (
+        <>
+          <select
+            className="input"
+            value={selNode}
+            aria-label="Node to stake to"
+            onChange={(e) => setSelNode(e.target.value)}
+          >
+            {nodes.map((n) => (
+              <option key={n.nodeId} value={String(n.nodeId)}>
+                Node {n.nodeId} — {n.description}
+              </option>
+            ))}
+          </select>
+          <p className="muted xsmall">
+            One small on-ledger fee (~$0.02 in ℏ). You can stop or switch nodes
+            anytime.
+          </p>
+          <button className="btn primary" disabled={busy || !selNode} onClick={stake}>
+            {busy ? "Staking…" : `Stake to node ${selNode}`}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={() => setChoosing(false)}>
+            Cancel
+          </button>
+        </>
+      )}
+      {msg && (
+        <p className={msg.ok ? "success" : "error"}>
+          {msg.text}{" "}
+          {msg.url && (
+            <a className="link" href={msg.url} target="_blank" rel="noreferrer">
+              View ↗
+            </a>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Password-gated key export for the extension (re-verifies before reveal). */
 function ExportCard({
   open,
@@ -1178,6 +1417,7 @@ function SendTab({
       const r = token
         ? await wallet.sendToken(token.tokenId, to.trim(), amount.trim())
         : await wallet.send(to.trim(), amount.trim());
+      pushRecent(network, to.trim());
       setMsg({
         ok: true,
         text: `Sent ${token ? amount : formatHbar(amount)} ${unit} · ${r.status}`,
@@ -1259,6 +1499,16 @@ function SendTab({
         </select>
       )}
       <input className="input" placeholder="Recipient (0x… or 0.0.…)" value={to} onChange={(e) => setTo(e.target.value)} />
+      {!to && loadRecents(network).length > 0 && (
+        <div className="id-row">
+          <span className="muted xsmall">Recent:</span>
+          {loadRecents(network).map((addr) => (
+            <button key={addr} className="chip" onClick={() => setTo(addr)}>
+              {shortAddr(addr)}
+            </button>
+          ))}
+        </div>
+      )}
       <input
         className="input"
         placeholder={token ? `Amount (${token.symbol})` : "Amount (HBAR)"}

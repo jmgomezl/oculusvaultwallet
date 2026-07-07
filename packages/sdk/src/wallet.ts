@@ -15,6 +15,7 @@ import type { UserSecret } from "./crypto/encryption.js";
 import { fromPrivateKey } from "./crypto/keys.js";
 import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
 import { MirrorClient } from "./hedera/mirror.js";
+import { setStaking } from "./hedera/staking.js";
 import { parseTokenAmount } from "./hedera/tokenAmount.js";
 import { associateToken, sendToken } from "./hedera/tokens.js";
 import { sendHbar } from "./hedera/transfer.js";
@@ -24,7 +25,9 @@ import type {
   HederaNetwork,
   HistoryItem,
   IncomingTransfer,
+  NetworkNode,
   SendResult,
+  StakingInfo,
   TokenBalance,
   TokenInfo,
   WalletIdentity,
@@ -303,6 +306,44 @@ export class OculusVault {
       accountId,
       privateKeyHex: this.privateKeyHex!,
       tokenId,
+    });
+  }
+
+  /** Native-staking state, or null before the account exists on-ledger. */
+  async getStakingInfo(): Promise<StakingInfo | null> {
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) return null;
+    return this.mirror.getStakingInfo(accountId);
+  }
+
+  /** Consensus nodes available to stake to on the current network. */
+  async getNetworkNodes(): Promise<NetworkNode[]> {
+    return this.mirror.getNetworkNodes();
+  }
+
+  /** Stake the account's balance to a node (nothing moves, no lockup). */
+  async stakeToNode(nodeId: number): Promise<SendResult> {
+    return this.updateStaking(nodeId);
+  }
+
+  /** Stop staking. */
+  async stopStaking(): Promise<SendResult> {
+    return this.updateStaking(null);
+  }
+
+  private async updateStaking(nodeId: number | null): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return setStaking({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      nodeId,
     });
   }
 

@@ -52,6 +52,11 @@ export class VaultStore {
     return this.map.get(uid) ?? null;
   }
 
+  /** All (uid, entry) pairs — read-only iteration for the notifier. */
+  entries(): Array<[string, VaultEntry]> {
+    return [...this.map.entries()];
+  }
+
   put(uid: string, record: string, now: string): void {
     this.map.set(uid, { record, updatedAt: now });
     this.flush();

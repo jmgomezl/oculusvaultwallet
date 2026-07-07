@@ -1,12 +1,26 @@
 /** Entry point: build the app and listen. See app.ts for the routes. */
+import { join } from "node:path";
+import { MirrorClient, getNetworkConfig } from "@oculusvault/sdk";
 import { config, assertProdSafety } from "./config.js";
 import { createApp } from "./app.js";
+import { createNotifier } from "./notifier.js";
+import { VaultStore } from "./vaultStore.js";
 
 assertProdSafety();
-createApp().listen(config.port, () => {
+const vault = new VaultStore(config.vaultDataDir);
+createApp({ vault }).listen(config.port, () => {
   console.log(
     `oculusvault server on :${config.port} (network=${config.network}, apps=${Object.keys(
       config.botTokens,
-    ).join(",")})`,
+    ).join(",")}, notify=${config.notifyEnabled})`,
   );
 });
+
+if (config.notifyEnabled && config.botToken !== "PLACEHOLDER_BOT_TOKEN") {
+  createNotifier({
+    vault,
+    mirror: new MirrorClient(getNetworkConfig(config.network)),
+    botToken: config.botToken,
+    cursorFile: join(config.vaultDataDir, "notify-cursors.json"),
+  }).start(config.notifyIntervalMs);
+}

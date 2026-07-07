@@ -68,6 +68,23 @@ export interface TokenInfo {
   type: string;
 }
 
+/** Native-staking state of an account, from the Mirror Node. */
+export interface StakingInfo {
+  /** Node the account stakes to, or null when not staking. */
+  stakedNodeId: number | null;
+  /** Reward earned but not yet paid out, in tinybar. */
+  pendingRewardTinybar: bigint;
+  /** Pending reward as a decimal HBAR string. */
+  pendingRewardHbar: string;
+  declineReward: boolean;
+}
+
+/** A consensus node an account can stake to. */
+export interface NetworkNode {
+  nodeId: number;
+  description: string;
+}
+
 /** An HTS token the account holds (is associated with). */
 export interface TokenBalance extends TokenInfo {
   /** Balance in the token's smallest units. */

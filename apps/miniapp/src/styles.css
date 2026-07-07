@@ -578,6 +578,18 @@ a.chip {
   text-decoration: none;
   color: var(--ink);
 }
+/* History rows are buttons now (they open the detail view) — keep the
+   engraved-list look, not the UA button chrome. */
+button.row {
+  width: 100%;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
 .row-glyph {
   display: inline-grid;
   place-items: center;
