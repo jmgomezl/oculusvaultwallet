@@ -1011,12 +1011,22 @@ function Dashboard({
         accountReady={identity.hederaAccountId != null}
         onChanged={refresh}
       />
+      <MintCard
+        wallet={wallet}
+        accountReady={identity.hederaAccountId != null}
+        onChanged={refresh}
+      />
       <StakeCard
         wallet={wallet}
         network={network}
         accountReady={identity.hederaAccountId != null}
       />
       {nfts.length > 0 && <NftCard nfts={nfts} wallet={wallet} onChanged={refresh} />}
+      <ContractCard
+        wallet={wallet}
+        network={network}
+        accountReady={identity.hederaAccountId != null}
+      />
       <NotaryCard
         wallet={wallet}
         network={network}
@@ -1570,6 +1580,200 @@ function NftCard({
               View ↗
             </a>
           )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Mint a token — the creation half of HTS. The wallet becomes treasury and
+ * keeps admin + supply keys, so the creator retains full control. Amounts
+ * are exact (the SDK rejects excess precision rather than truncating).
+ */
+function MintCard({
+  wallet,
+  accountReady,
+  onChanged,
+}: {
+  wallet: OculusVault;
+  accountReady: boolean;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [symbol, setSymbol] = useState("");
+  const [decimals, setDecimals] = useState("2");
+  const [supply, setSupply] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const create = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.createFungibleToken({
+        name,
+        symbol,
+        decimals: Number(decimals),
+        initialSupply: supply.trim(),
+      });
+      haptic("success");
+      setMsg({
+        ok: true,
+        text: `${symbol.toUpperCase()} is live — token ${r.tokenId} · ${r.status}`,
+        url: r.hashscanUrl,
+      });
+      setOpen(false);
+      setName(""); setSymbol(""); setSupply("");
+      onChanged();
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3>Mint a token</h3>
+      {!accountReady ? (
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> Minting unlocks once
+          your account exists — receive any HBAR first.
+        </p>
+      ) : !open ? (
+        <>
+          <p className="muted small">
+            Issue your own Hedera token in one step — this wallet becomes its
+            treasury and keeps the keys. Costs about $1 in ℏ.
+          </p>
+          <button className="btn" disabled={busy} onClick={() => setOpen(true)}>
+            Create a token
+          </button>
+        </>
+      ) : (
+        <>
+          <input className="input" placeholder="Name (e.g. Engraved Points)" value={name}
+                 onChange={(e) => setName(e.target.value)} />
+          <div className="input-row">
+            <input className="input" placeholder="Symbol (e.g. ENGR)" value={symbol}
+                   onChange={(e) => setSymbol(e.target.value)} />
+            <input className="input" placeholder="Decimals" inputMode="numeric" value={decimals}
+                   style={{ maxWidth: 90 }} onChange={(e) => setDecimals(e.target.value)} />
+          </div>
+          <input className="input" placeholder="Initial supply (minted to you)" inputMode="decimal"
+                 value={supply} onChange={(e) => setSupply(e.target.value)} />
+          <button className="btn primary" disabled={busy || !name || !symbol || !supply} onClick={create}>
+            {busy ? "Minting…" : "Mint it (~$1 in ℏ)"}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={() => setOpen(false)}>
+            Cancel
+          </button>
+        </>
+      )}
+      {msg && (
+        <p className={msg.ok ? "success" : "error"}>
+          {msg.text}{" "}
+          {msg.url && <a className="link" href={msg.url} target="_blank" rel="noreferrer">View ↗</a>}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Smart contract — native SCS execution from the wallet. ABI-agnostic on
+ * purpose: paste the calldata a dApp or ABI tool produced; the wallet signs
+ * and executes. (dApps that speak WalletConnect get a nicer flow via the
+ * Connect card — this is the raw door.)
+ */
+function ContractCard({
+  wallet,
+  network,
+  accountReady,
+}: {
+  wallet: OculusVault;
+  network: HederaNetwork;
+  accountReady: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState("");
+  const [value, setValue] = useState("");
+  const [data, setData] = useState("");
+  const [gas, setGas] = useState("120000");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const call = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.executeContract({
+        contract: target,
+        calldata: data.trim() || undefined,
+        payableHbar: value.trim() || undefined,
+        gas: Math.max(21_000, Number(gas) || 120_000),
+      });
+      haptic("success");
+      setMsg({ ok: true, text: `Executed · ${r.status}`, url: r.hashscanUrl });
+      onDoneReset();
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onDoneReset = () => { setTarget(""); setValue(""); setData(""); setOpen(false); };
+
+  return (
+    <div className="card">
+      <h3>Smart contract</h3>
+      {!accountReady ? (
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> Contract calls unlock
+          once your account exists — receive any HBAR first.
+        </p>
+      ) : !open ? (
+        <>
+          <p className="muted small">
+            Call any Hedera contract directly — paste the target and calldata
+            from the dApp or ABI tool you’re using.
+          </p>
+          <button className="btn" disabled={busy} onClick={() => setOpen(true)}>
+            Call a contract
+          </button>
+        </>
+      ) : (
+        <>
+          <input className="input" placeholder="Contract (0.0.… or 0x…)" value={target}
+                 onChange={(e) => setTarget(e.target.value)} />
+          <input className="input mono" placeholder="Calldata (0x…, optional)" value={data}
+                 autoComplete="off" spellCheck={false} onChange={(e) => setData(e.target.value)} />
+          <div className="input-row">
+            <input className="input" placeholder="Value ℏ (optional)" inputMode="decimal" value={value}
+                   onChange={(e) => setValue(e.target.value)} />
+            <input className="input" placeholder="Gas" inputMode="numeric" value={gas}
+                   style={{ maxWidth: 110 }} onChange={(e) => setGas(e.target.value)} />
+          </div>
+          <p className="muted xsmall">
+            Only call contracts you trust with calldata you built yourself.
+            {network === "mainnet" ? " Mainnet — real funds." : ""}
+          </p>
+          <button className="btn primary" disabled={busy || !target} onClick={call}>
+            {busy ? "Executing…" : "Sign & execute"}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={() => setOpen(false)}>
+            Cancel
+          </button>
+        </>
+      )}
+      {msg && (
+        <p className={msg.ok ? "success" : "error"}>
+          {msg.text}{" "}
+          {msg.url && <a className="link" href={msg.url} target="_blank" rel="noreferrer">View ↗</a>}
         </p>
       )}
     </div>

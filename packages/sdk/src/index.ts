@@ -92,11 +92,15 @@ export {
   sendToken,
   sendNft,
   associateToken,
+  createFungibleToken,
   USDC_TOKEN_IDS,
   type SendTokenArgs,
   type SendNftArgs,
   type AssociateTokenArgs,
+  type CreateFungibleTokenArgs,
+  type CreateTokenResult,
 } from "./hedera/tokens.js";
+export { executeContract, type ExecuteContractArgs } from "./hedera/contract.js";
 export { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";
 export { setStaking, type SetStakingArgs } from "./hedera/staking.js";
 export {

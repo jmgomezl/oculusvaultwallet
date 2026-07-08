@@ -17,11 +17,13 @@ import {
   Long,
   PrivateKey,
   TokenAssociateTransaction,
+  TokenCreateTransaction,
   TokenId,
   TransferTransaction,
 } from "@hashgraph/sdk";
 import type { HederaNetwork, SendResult } from "../types.js";
 import { getNetworkConfig, hashscanTxUrl } from "./networks.js";
+import { parseTokenAmount } from "./tokenAmount.js";
 import { clientFor, recipientAccountId } from "./transfer.js";
 
 export { USDC_TOKEN_IDS } from "./knownTokens.js";
@@ -80,6 +82,74 @@ export async function sendToken(args: SendTokenArgs): Promise<SendResult> {
     const receipt = await response.getReceipt(client);
     const transactionId = response.transactionId.toString();
     return {
+      transactionId,
+      hashscanUrl: hashscanTxUrl(cfg, transactionId),
+      status: receipt.status.toString(),
+    };
+  } catch (err) {
+    throw friendlyTokenError(err);
+  } finally {
+    client.close();
+  }
+}
+
+export interface CreateFungibleTokenArgs {
+  network: HederaNetwork;
+  accountId: string;
+  privateKeyHex: string;
+  name: string;
+  symbol: string;
+  /** 0–8 keeps amounts sane in wallet UIs (USDC uses 6). */
+  decimals: number;
+  /** Human decimal amount minted to the creator, e.g. "1000". */
+  initialSupply: string;
+}
+
+export interface CreateTokenResult extends SendResult {
+  tokenId: string;
+}
+
+/**
+ * Create a fungible HTS token with this wallet as treasury. Admin + supply
+ * keys are the wallet's key, so the creator keeps full control (can mint
+ * more or update later); anyone can hold it via normal association.
+ */
+export async function createFungibleToken(
+  args: CreateFungibleTokenArgs,
+): Promise<CreateTokenResult> {
+  const name = args.name.trim();
+  const symbol = args.symbol.trim().toUpperCase();
+  if (!name || name.length > 100) throw new Error("Token name: 1–100 characters");
+  if (!/^[A-Z0-9]{1,10}$/.test(symbol)) {
+    throw new Error("Symbol: 1–10 letters/digits");
+  }
+  if (!Number.isInteger(args.decimals) || args.decimals < 0 || args.decimals > 8) {
+    throw new Error("Decimals must be 0–8");
+  }
+  const supplyRaw = parseTokenAmount(args.initialSupply, args.decimals);
+  if (supplyRaw <= 0n) throw new Error("Initial supply must be positive");
+
+  const cfg = getNetworkConfig(args.network);
+  const client = clientFor(args.network);
+  const key = PrivateKey.fromStringECDSA(args.privateKeyHex);
+  const treasury = AccountId.fromString(args.accountId);
+  client.setOperator(treasury, key);
+
+  try {
+    const response = await new TokenCreateTransaction()
+      .setTokenName(name)
+      .setTokenSymbol(symbol)
+      .setDecimals(args.decimals)
+      .setInitialSupply(Long.fromString(supplyRaw.toString()))
+      .setTreasuryAccountId(treasury)
+      .setAdminKey(key.publicKey)
+      .setSupplyKey(key.publicKey)
+      .execute(client);
+    const receipt = await response.getReceipt(client);
+    if (!receipt.tokenId) throw new Error("Network returned no token id");
+    const transactionId = response.transactionId.toString();
+    return {
+      tokenId: receipt.tokenId.toString(),
       transactionId,
       hashscanUrl: hashscanTxUrl(cfg, transactionId),
       status: receipt.status.toString(),

@@ -15,10 +15,17 @@ import type { UserSecret } from "./crypto/encryption.js";
 import { fromPrivateKey } from "./crypto/keys.js";
 import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
 import { createTopic, submitTopicMessage, type CreateTopicResult } from "./hedera/consensus.js";
+import { executeContract, type ExecuteContractArgs } from "./hedera/contract.js";
 import { MirrorClient } from "./hedera/mirror.js";
 import { setStaking } from "./hedera/staking.js";
 import { parseTokenAmount } from "./hedera/tokenAmount.js";
-import { associateToken, sendNft, sendToken } from "./hedera/tokens.js";
+import {
+  associateToken,
+  createFungibleToken,
+  sendNft,
+  sendToken,
+  type CreateTokenResult,
+} from "./hedera/tokens.js";
 import { sendHbar } from "./hedera/transfer.js";
 import type { KeyProvider } from "./keyprovider/KeyProvider.js";
 import type {
@@ -343,6 +350,47 @@ export class OculusVault {
     const accountId = this.accountId ?? (await this.refreshAccountId());
     if (!accountId) return [];
     return this.mirror.getNfts(accountId);
+  }
+
+  /** Create a fungible HTS token with this wallet as treasury/admin/supply. */
+  async createFungibleToken(args: {
+    name: string;
+    symbol: string;
+    decimals: number;
+    initialSupply: string;
+  }): Promise<CreateTokenResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return createFungibleToken({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      ...args,
+    });
+  }
+
+  /** Execute a smart contract with ABI-encoded calldata, signed natively. */
+  async executeContract(
+    args: Omit<ExecuteContractArgs, "network" | "accountId" | "privateKeyHex">,
+  ): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return executeContract({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      ...args,
+    });
   }
 
   /** Create an HCS topic owned by this wallet (admin + submit keys). */

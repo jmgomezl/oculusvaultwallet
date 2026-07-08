@@ -322,6 +322,10 @@ same interface and pass it to `OculusVault` — nothing else changes.
 - ✅ **Native staking** to a network node (no lockup) and a third-party
   **buy-HBAR entry** on mainnet (MoonPay link — the wallet never touches
   fiat).
+- ✅ **Token creation** — mint your own fungible HTS token in one step
+  (wallet = treasury, admin + supply keys retained) — and **native smart
+  contract calls** (ABI-agnostic: target + calldata + value + gas), so all
+  four user-facing Hedera services work from the wallet itself.
 - ✅ **HCS "Notary"** — Hedera Consensus Service in plain words: create a
   topic (your public notebook, admin+submit keys held by the wallet) and
   stamp messages with immutable consensus timestamps; entries read back from
