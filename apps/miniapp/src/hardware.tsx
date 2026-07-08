@@ -194,18 +194,31 @@ function App() {
   const connect = useCallback(async () => {
     setErr("");
     try {
-      const transport = await TransportWebHID.create();
-      const eth = new Eth(transport);
-      const { address: addr } = await eth.getAddress(PATH, false);
-      ethRef.current = eth;
-      setAddress(addr);
-      setPhase("ready");
+      // Reuse a connection this page already holds (e.g. after a failed first
+      // attempt) before asking Chrome to open a new one.
+      const transport =
+        (await TransportWebHID.openConnected().catch(() => null)) ??
+        (await TransportWebHID.create());
+      try {
+        const eth = new Eth(transport);
+        const { address: addr } = await eth.getAddress(PATH, false);
+        ethRef.current = eth;
+        setAddress(addr);
+        setPhase("ready");
+      } catch (e) {
+        // Never leak an open HID channel — that's what causes
+        // "The device is already open" on the next click.
+        await transport.close().catch(() => {});
+        throw e;
+      }
     } catch (e) {
       const msg = String((e as Error).message ?? e);
       setErr(
-        /0x6511|0x6e00|app/i.test(msg)
-          ? "Open the ETHEREUM app on your Ledger, then try again."
-          : msg,
+        /already open/i.test(msg)
+          ? "Another app is holding the Ledger — quit Ledger Live, unplug/replug the device, reload this page, then try again."
+          : /0x6511|0x6e00|0x6d00|app|locked|0x5515/i.test(msg)
+            ? "Unlock the Ledger and open the ETHEREUM app on it, then try again."
+            : msg,
       );
     }
   }, []);
