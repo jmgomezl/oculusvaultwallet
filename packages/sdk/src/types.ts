@@ -85,6 +85,23 @@ export interface NetworkNode {
   description: string;
 }
 
+/** A consensus-service topic this account created. */
+export interface TopicRef {
+  topicId: string;
+  /** ISO-8601 creation time. */
+  createdAt: string;
+}
+
+/** One message on an HCS topic, as recorded by the Mirror Node. */
+export interface TopicMessage {
+  sequenceNumber: number;
+  /** UTF-8 decoded contents (lossy for binary payloads). */
+  message: string;
+  /** ISO-8601 consensus timestamp — the "notary stamp". */
+  timestamp: string;
+  consensusTimestamp: string;
+}
+
 /** An NFT the account holds. */
 export interface NftItem {
   tokenId: string;

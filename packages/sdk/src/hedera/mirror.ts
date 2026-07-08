@@ -11,6 +11,8 @@ import type {
   StakingInfo,
   TokenBalance,
   TokenInfo,
+  TopicMessage,
+  TopicRef,
 } from "../types.js";
 import { base64urlToBytes } from "../crypto/encoding.js";
 import { USDC_TOKEN_IDS } from "./knownTokens.js";
@@ -187,6 +189,57 @@ export class MirrorClient {
       }),
     );
     return joined.filter((t): t is TokenBalance => t != null);
+  }
+
+  /** Topics this account created (from its CONSENSUSCREATETOPIC history). */
+  async getCreatedTopics(accountId: string): Promise<TopicRef[]> {
+    const params = new URLSearchParams({
+      "account.id": accountId,
+      transactiontype: "CONSENSUSCREATETOPIC",
+      result: "success",
+      limit: "50",
+      order: "desc",
+    });
+    const data = await this.get<any>(`/api/v1/transactions?${params}`);
+    const topics: TopicRef[] = [];
+    for (const tx of data.transactions ?? []) {
+      if (!tx.entity_id) continue;
+      topics.push({
+        topicId: tx.entity_id,
+        createdAt: new Date(
+          Math.floor(Number(tx.consensus_timestamp) * 1000),
+        ).toISOString(),
+      });
+    }
+    return topics;
+  }
+
+  /** Latest messages on a topic, newest first, UTF-8 decoded. */
+  async getTopicMessages(
+    topicId: string,
+    limit = 25,
+  ): Promise<TopicMessage[]> {
+    const data = await this.get<any>(
+      `/api/v1/topics/${encodeURIComponent(topicId)}/messages?order=desc&limit=${limit}`,
+    );
+    return (data.messages ?? []).map((m: any) => {
+      let text = "";
+      try {
+        const bin = atob(String(m.message ?? ""));
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        text = new TextDecoder().decode(bytes);
+      } catch {
+        text = "(binary message)";
+      }
+      return {
+        sequenceNumber: Number(m.sequence_number),
+        message: text,
+        timestamp: new Date(
+          Math.floor(Number(m.consensus_timestamp) * 1000),
+        ).toISOString(),
+        consensusTimestamp: String(m.consensus_timestamp),
+      } satisfies TopicMessage;
+    });
   }
 
   /** NFTs the account holds, joined with collection metadata. */

@@ -14,6 +14,7 @@
 import type { UserSecret } from "./crypto/encryption.js";
 import { fromPrivateKey } from "./crypto/keys.js";
 import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
+import { createTopic, submitTopicMessage, type CreateTopicResult } from "./hedera/consensus.js";
 import { MirrorClient } from "./hedera/mirror.js";
 import { setStaking } from "./hedera/staking.js";
 import { parseTokenAmount } from "./hedera/tokenAmount.js";
@@ -31,6 +32,8 @@ import type {
   StakingInfo,
   TokenBalance,
   TokenInfo,
+  TopicMessage,
+  TopicRef,
   WalletIdentity,
 } from "./types.js";
 
@@ -340,6 +343,53 @@ export class OculusVault {
     const accountId = this.accountId ?? (await this.refreshAccountId());
     if (!accountId) return [];
     return this.mirror.getNfts(accountId);
+  }
+
+  /** Create an HCS topic owned by this wallet (admin + submit keys). */
+  async createTopic(memo?: string): Promise<CreateTopicResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return createTopic({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      memo,
+    });
+  }
+
+  /** Stamp a message onto one of this wallet's topics. */
+  async submitTopicMessage(topicId: string, message: string): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return submitTopicMessage({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      topicId,
+      message,
+    });
+  }
+
+  /** Topics this wallet created ([] until the account exists). */
+  async getTopics(): Promise<TopicRef[]> {
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) return [];
+    return this.mirror.getCreatedTopics(accountId);
+  }
+
+  /** Latest messages on a topic (public data — any topic id works). */
+  async getTopicMessages(topicId: string, limit = 25): Promise<TopicMessage[]> {
+    return this.mirror.getTopicMessages(topicId, limit);
   }
 
   /** Native-staking state, or null before the account exists on-ledger. */

@@ -15,8 +15,11 @@ import {
   type StakingInfo,
   type TokenBalance,
   type TokenInfo,
+  type TopicMessage,
+  type TopicRef,
   type WalletIdentity,
 } from "@oculusvault/sdk";
+import { getNetworkConfig } from "@oculusvault/sdk";
 import {
   getSession,
   clearSession,
@@ -703,6 +706,12 @@ function Dashboard({
       />
 
       {nfts.length > 0 && <NftCard nfts={nfts} wallet={wallet} onChanged={refresh} />}
+
+      <NotaryCard
+        wallet={wallet}
+        network={network}
+        accountReady={identity.hederaAccountId != null}
+      />
 
       <HistoryList items={history} />
 
@@ -1409,6 +1418,180 @@ function StakeCard({
           <button className="btn ghost" disabled={busy} onClick={() => setChoosing(false)}>
             Cancel
           </button>
+        </>
+      )}
+      {msg && (
+        <p className={msg.ok ? "success" : "error"}>
+          {msg.text}{" "}
+          {msg.url && (
+            <a className="link" href={msg.url} target="_blank" rel="noreferrer">
+              View ↗
+            </a>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Notary — HCS in plain words; same card as the Mini App. */
+function NotaryCard({
+  wallet,
+  network,
+  accountReady,
+}: {
+  wallet: OculusVault;
+  network: HederaNetwork;
+  accountReady: boolean;
+}) {
+  const [topics, setTopics] = useState<TopicRef[]>([]);
+  const [sel, setSel] = useState<string | null>(null);
+  const [messages, setMessages] = useState<TopicMessage[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [memo, setMemo] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  const hashscanBase = getNetworkConfig(network).hashscanBase;
+
+  const loadTopics = useCallback(async () => {
+    try {
+      setTopics(await wallet.getTopics());
+    } catch { /* transient mirror failure */ }
+  }, [wallet]);
+
+  const loadMessages = useCallback(async (topicId: string) => {
+    try {
+      setMessages(await wallet.getTopicMessages(topicId, 10));
+    } catch { /* transient mirror failure */ }
+  }, [wallet]);
+
+  useEffect(() => {
+    if (accountReady) void loadTopics();
+  }, [accountReady, loadTopics]);
+
+  useEffect(() => {
+    if (sel) void loadMessages(sel);
+    else setMessages([]);
+  }, [sel, loadMessages]);
+
+  const create = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.createTopic(memo.trim() || undefined);
+      setMsg({ ok: true, text: `Notebook ${r.topicId} created · ${r.status}`, url: r.hashscanUrl });
+      setCreating(false);
+      setMemo("");
+      setTopics((t) => [{ topicId: r.topicId, createdAt: new Date().toISOString() }, ...t]);
+      setSel(r.topicId);
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stamp = async () => {
+    if (!sel) return;
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.submitTopicMessage(sel, note.trim());
+      setMsg({ ok: true, text: `Stamped · ${r.status}`, url: r.hashscanUrl });
+      setNote("");
+      setTimeout(() => void loadMessages(sel), 4000);
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3>Notary</h3>
+      {!accountReady ? (
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> The notary unlocks
+          once your account exists — receive any HBAR first.
+        </p>
+      ) : (
+        <>
+          <p className="muted small">
+            Stamp words onto the public ledger. Every entry gets a consensus
+            timestamp that can never be altered — proof of <em>what</em> you
+            said and <em>when</em>. Notebooks and entries are public.
+          </p>
+          {topics.length > 0 && (
+            <div className="id-row">
+              {topics.map((t) => (
+                <button
+                  key={t.topicId}
+                  className="chip"
+                  style={sel === t.topicId ? { fontWeight: 700 } : undefined}
+                  onClick={() => setSel(sel === t.topicId ? null : t.topicId)}
+                >
+                  {t.topicId}
+                </button>
+              ))}
+            </div>
+          )}
+          {sel && (
+            <>
+              <div className="input-row">
+                <input
+                  className="input"
+                  placeholder="Write an entry (max ~1000 characters)"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && note.trim() && stamp()}
+                />
+                <button className="btn" disabled={busy || !note.trim()} onClick={stamp}>
+                  {busy ? "…" : "Stamp"}
+                </button>
+              </div>
+              {messages.map((m) => (
+                <div className="acct-row" key={m.consensusTimestamp}>
+                  <span className="small">
+                    <span className="muted xsmall">#{m.sequenceNumber} · {new Date(m.timestamp).toLocaleString()}</span>
+                    <br />
+                    {m.message}
+                  </span>
+                </div>
+              ))}
+              <a
+                className="link small"
+                href={`${hashscanBase}/topic/${sel}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Verify on Hashscan ↗
+              </a>
+            </>
+          )}
+          {!creating ? (
+            <button className="btn ghost" disabled={busy} onClick={() => setCreating(true)}>
+              New notebook (small ℏ fee)
+            </button>
+          ) : (
+            <>
+              <input
+                className="input"
+                placeholder="What is this notebook for? (public memo, optional)"
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && create()}
+              />
+              <button className="btn primary" disabled={busy} onClick={create}>
+                {busy ? "Creating…" : "Create notebook"}
+              </button>
+              <button className="btn ghost" disabled={busy} onClick={() => setCreating(false)}>
+                Cancel
+              </button>
+            </>
+          )}
         </>
       )}
       {msg && (

@@ -322,6 +322,10 @@ same interface and pass it to `OculusVault` — nothing else changes.
 - ✅ **Native staking** to a network node (no lockup) and a third-party
   **buy-HBAR entry** on mainnet (MoonPay link — the wallet never touches
   fiat).
+- ✅ **HCS "Notary"** — Hedera Consensus Service in plain words: create a
+  topic (your public notebook, admin+submit keys held by the wallet) and
+  stamp messages with immutable consensus timestamps; entries read back from
+  the Mirror Node with Hashscan verification one tap away.
 - ✅ **Ledger hardware support** (oculusvault.com/hardware.html, desktop):
   bypasses the limited Hedera Ledger app entirely — the Ledger **Ethereum**
   app signs EVM transactions to the JSON-RPC relay, and the device's

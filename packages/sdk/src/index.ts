@@ -27,6 +27,8 @@ export type {
   StakingInfo,
   NetworkNode,
   NftItem,
+  TopicRef,
+  TopicMessage,
   EncryptedWalletRecord,
   KdfParams,
   SecretSource,
@@ -97,6 +99,13 @@ export {
 } from "./hedera/tokens.js";
 export { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";
 export { setStaking, type SetStakingArgs } from "./hedera/staking.js";
+export {
+  createTopic,
+  submitTopicMessage,
+  type CreateTopicArgs,
+  type CreateTopicResult,
+  type SubmitTopicMessageArgs,
+} from "./hedera/consensus.js";
 export { describeTransaction } from "./hedera/describe.js";
 export {
   EVM_CHAIN_IDS,
