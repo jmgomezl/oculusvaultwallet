@@ -717,6 +717,12 @@ function Dashboard({
     });
   }, []);
 
+  // The backup banner's "Export now" must pull the Self-custody drawer open.
+  const custodyRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (exportOpen && custodyRef.current) custodyRef.current.open = true;
+  }, [exportOpen]);
+
   const usd = balance ? formatUsd(balance.usdEstimate) : null;
 
   if (view === "receive") {
@@ -1011,40 +1017,86 @@ function Dashboard({
         accountReady={identity.hederaAccountId != null}
         onChanged={refresh}
       />
-      <MintCard
-        wallet={wallet}
-        accountReady={identity.hederaAccountId != null}
-        onChanged={refresh}
-      />
-      <StakeCard
-        wallet={wallet}
-        network={network}
-        accountReady={identity.hederaAccountId != null}
-      />
-      {nfts.length > 0 && <NftCard nfts={nfts} wallet={wallet} onChanged={refresh} />}
-      <ContractCard
-        wallet={wallet}
-        network={network}
-        accountReady={identity.hederaAccountId != null}
-      />
-      <NotaryCard
-        wallet={wallet}
-        network={network}
-        accountReady={identity.hederaAccountId != null}
-      />
-      <ConnectCard
-        wallet={wallet}
-        network={network}
-        accountReady={identity.hederaAccountId != null}
-      />
+
+      <div className="svc-label">Services</div>
+      {nfts.length > 0 && (
+        <Drawer title="Collectibles" sum={`${nfts.length} item${nfts.length === 1 ? "" : "s"}`}>
+          <NftCard nfts={nfts} wallet={wallet} onChanged={refresh} />
+        </Drawer>
+      )}
+      <Drawer title="Staking" sum="earn on your balance">
+        <StakeCard
+          wallet={wallet}
+          network={network}
+          accountReady={identity.hederaAccountId != null}
+        />
+      </Drawer>
+      <Drawer title="Mint a token" sum="issue your own">
+        <MintCard
+          wallet={wallet}
+          accountReady={identity.hederaAccountId != null}
+          onChanged={refresh}
+        />
+      </Drawer>
+      <Drawer title="Smart contract" sum="call any contract">
+        <ContractCard
+          wallet={wallet}
+          network={network}
+          accountReady={identity.hederaAccountId != null}
+        />
+      </Drawer>
+      <Drawer title="Notary" sum="stamp it on the ledger">
+        <NotaryCard
+          wallet={wallet}
+          network={network}
+          accountReady={identity.hederaAccountId != null}
+        />
+      </Drawer>
+      <Drawer title="Connect to apps" sum="keep open while in use">
+        <ConnectCard
+          wallet={wallet}
+          network={network}
+          accountReady={identity.hederaAccountId != null}
+        />
+      </Drawer>
+      <Drawer title="Self-custody" sum="export your key" innerRef={custodyRef}>
+        <ExportRow
+          open={exportOpen}
+          setOpen={setExportOpen}
+          reveal={(pw) => wallet.exportKeyWithSecret({ source: "password", value: pw })}
+        />
+      </Drawer>
+
       <HistoryList items={history} />
-      <ExportRow
-        open={exportOpen}
-        setOpen={setExportOpen}
-        reveal={(pw) => wallet.exportKeyWithSecret({ source: "password", value: pw })}
-      />
       <Footer />
     </div>
+  );
+}
+
+/**
+ * A closed drawer in the bureau: native <details> with a shared `name`, so
+ * opening one closes the others — the desk never ends up with every drawer
+ * pulled out at once. The card inside sheds its frame via CSS.
+ */
+function Drawer({
+  title,
+  sum,
+  children,
+  innerRef,
+}: {
+  title: string;
+  sum?: string;
+  children: React.ReactNode;
+  innerRef?: React.Ref<HTMLDetailsElement>;
+}) {
+  return (
+    <details className="drawer" ref={innerRef} {...({ name: "svc" } as object)}>
+      <summary>
+        <span className="d-title">{title}</span>
+        {sum && <span className="d-sum muted xsmall">{sum}</span>}
+      </summary>
+      {children}
+    </details>
   );
 }
 
@@ -2200,11 +2252,13 @@ function ConnectCard({
 
 function HistoryList({ items }: { items: HistoryItem[] }) {
   const [detail, setDetail] = useState<HistoryItem | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? items : items.slice(0, 4);
   return (
     <div className="card">
       <h3>History</h3>
       {items.length === 0 && <p className="muted small">No transactions yet.</p>}
-      {items.map((it) => (
+      {shown.map((it) => (
         <button
           key={it.transactionId + it.consensusTimestamp + (it.token?.tokenId ?? "")}
           className="row"
@@ -2223,6 +2277,16 @@ function HistoryList({ items }: { items: HistoryItem[] }) {
           <span className="link xsmall">›</span>
         </button>
       ))}
+      {items.length > shown.length && (
+        <button className="linklike" onClick={() => setShowAll(true)}>
+          Show all ({items.length})
+        </button>
+      )}
+      {showAll && items.length > 4 && (
+        <button className="linklike" onClick={() => setShowAll(false)}>
+          Show less
+        </button>
+      )}
       {detail && <TxDetail item={detail} onClose={() => setDetail(null)} />}
     </div>
   );

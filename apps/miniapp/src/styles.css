@@ -798,3 +798,64 @@ code {
   font-family: "JetBrains Mono", monospace;
   letter-spacing: 0.04em;
 }
+
+/* ---- The bureau: services live in closed drawers, one open at a time ---- */
+.svc-label {
+  margin: 18px 2px 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.svc-label::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--rule);
+}
+details.drawer {
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper-raise, transparent);
+  margin: 0 0 10px;
+  box-shadow: 2.5px 2.5px 0 rgba(28, 41, 30, 0.16);
+  overflow: hidden;
+}
+details.drawer > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 13px 14px;
+  user-select: none;
+}
+details.drawer > summary::-webkit-details-marker { display: none; }
+details.drawer > summary .d-title {
+  font-family: "Fraunces", serif;
+  font-weight: 700;
+  font-size: 16px;
+}
+details.drawer > summary .d-sum {
+  flex: 1;
+  text-align: right;
+}
+details.drawer > summary::after {
+  content: "+";
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  color: var(--muted);
+}
+details.drawer[open] > summary::after { content: "−"; }
+details.drawer[open] > summary { border-bottom: 1px dashed var(--rule); }
+/* The card inside a drawer sheds its own frame — the drawer is the frame. */
+details.drawer > .card {
+  border: 0;
+  box-shadow: none;
+  margin: 0;
+  border-radius: 0;
+}
+details.drawer > .card > h3:first-child { display: none; }
