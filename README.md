@@ -55,10 +55,10 @@ scripts/deploy.sh  build locally → ship to the server (see DEPLOY.md)
 **Desktop too:** the [Chrome extension](./apps/extension/README.md)
 authenticates with the official Telegram Login Widget and opens the **same
 vault** as the Mini App — Telegram remains the single source of truth; the
-extension is just another client of the ciphertext-only vault. A Chrome Web
-Store listing is **in review**; until it's live, build and load it unpacked
-(`npm run build -w @oculusvault/extension`, then load `apps/extension/dist`
-via `chrome://extensions` → Developer mode).
+extension is just another client of the ciphertext-only vault. It's live on the
+**[Chrome Web Store](https://chromewebstore.google.com/detail/oculusvault-%E2%80%94-hedera-wall/bnjmnccojfgihhloboehpmobigknnlfm)**
+— or build and load it unpacked (`npm run build -w @oculusvault/extension`, then
+load `apps/extension/dist` via `chrome://extensions` → Developer mode).
 
 ---
 

@@ -1,5 +1,9 @@
 # OculusVault Chrome extension
 
+> **Live on the Chrome Web Store:**
+> <https://chromewebstore.google.com/detail/oculusvault-%E2%80%94-hedera-wall/bnjmnccojfgihhloboehpmobigknnlfm>
+> Install from there, or build and load it unpacked (see **Develop** below).
+
 The same Telegram-anchored, non-custodial Hedera wallet — on desktop.
 **Telegram stays the single source of truth**: the extension authenticates you
 via the official Telegram Login Widget, the server verifies the signature and
@@ -50,6 +54,12 @@ Load it: `chrome://extensions` → enable **Developer mode** → **Load unpacked
 (chrome.* APIs fall back to dev shims).
 
 ## Publish to the Chrome Web Store
+
+The extension is **already published** — the
+[live listing](https://chromewebstore.google.com/detail/oculusvault-%E2%80%94-hedera-wall/bnjmnccojfgihhloboehpmobigknnlfm)
+was created with the steps below. They're kept as a reference for the first
+listing of a fork; for shipping updates to the existing listing, jump to the
+last line (bump `version`, rebuild, re-zip, upload).
 
 1. **Developer account:** register at the
    [Chrome Web Store Developer Console](https://chrome.google.com/webstore/devconsole)
