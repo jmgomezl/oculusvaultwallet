@@ -6,7 +6,7 @@ import {
   RemoteVaultStorage,
   buildPayLink,
   fromPrivateKey,
-  USDC_TOKEN_IDS,
+  SUGGESTED_TOKENS,
   type Balance,
   type HederaNetwork,
   type HistoryItem,
@@ -983,8 +983,10 @@ function TokensCard({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
 
-  const usdcId = USDC_TOKEN_IDS[network];
-  const hasUsdc = usdcId != null && tokens.some((t) => t.tokenId === usdcId);
+  // Major tokens (chain-verified registry) the wallet doesn't hold yet.
+  const suggestions = SUGGESTED_TOKENS[network].filter(
+    (k) => !tokens.some((t) => t.tokenId === k.tokenId),
+  );
   const validId = /^0\.0\.\d+$/.test(tokenIdIn.trim());
 
   const lookup = async () => {
@@ -1052,22 +1054,32 @@ function TokensCard({
         </p>
       ) : (
         <>
-          <div className="req-actions">
-            {usdcId && !hasUsdc && (
-              <button
-                className="btn"
-                disabled={busy}
-                onClick={() => associate(usdcId, "USDC")}
-              >
-                Enable USDC
-              </button>
-            )}
-            {!adding && (
-              <button className="btn ghost" disabled={busy} onClick={() => setAdding(true)}>
-                Add by token ID
-              </button>
-            )}
-          </div>
+          {suggestions.length > 0 && (
+            <>
+              <p className="muted xsmall">
+                Well-known tokens — click to enable (verified official ids,
+                tiny ℏ fee each):
+              </p>
+              <div className="id-row" style={{ justifyContent: "flex-start" }}>
+                {suggestions.map((k) => (
+                  <button
+                    key={k.tokenId}
+                    className="chip"
+                    title={`${k.name} · ${k.tokenId}`}
+                    disabled={busy}
+                    onClick={() => associate(k.tokenId, k.symbol)}
+                  >
+                    ＋ {k.symbol}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {!adding && (
+            <button className="btn ghost" disabled={busy} onClick={() => setAdding(true)}>
+              Add by token ID
+            </button>
+          )}
           {adding && (
             <>
               <div className="input-row">

@@ -26,7 +26,7 @@ import { getNetworkConfig, hashscanTxUrl } from "./networks.js";
 import { parseTokenAmount } from "./tokenAmount.js";
 import { clientFor, recipientAccountId } from "./transfer.js";
 
-export { USDC_TOKEN_IDS } from "./knownTokens.js";
+export { USDC_TOKEN_IDS, SUGGESTED_TOKENS, type KnownToken } from "./knownTokens.js";
 
 /** Map Hedera status codes to sentences a wallet user can act on. */
 function friendlyTokenError(err: unknown): Error {

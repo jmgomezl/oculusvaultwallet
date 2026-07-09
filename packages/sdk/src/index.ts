@@ -94,6 +94,8 @@ export {
   associateToken,
   createFungibleToken,
   USDC_TOKEN_IDS,
+  SUGGESTED_TOKENS,
+  type KnownToken,
   type SendTokenArgs,
   type SendNftArgs,
   type AssociateTokenArgs,
