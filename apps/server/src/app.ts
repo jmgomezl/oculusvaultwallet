@@ -155,14 +155,8 @@ export function createApp(deps: AppDeps = {}): Express {
       // Echo the deep-link start parameter from the VERIFIED payload — the
       // HMAC covers it, and client-side extraction is flaky across Telegram
       // platforms (observed missing on iOS despite a correct launch link).
-      const initFields = new URLSearchParams(initData);
-      const startParam = initFields.get("start_param") ?? undefined;
-      // TEMP DIAGNOSTIC (issue: iOS pay links arrive without start_param):
-      // log which fields Telegram actually sent — names only, no values
-      // except the public start_param.
-      console.log(
-        `[auth] initData fields: ${[...initFields.keys()].join(",")} | start_param=${startParam ?? "(none)"}`,
-      );
+      const startParam =
+        new URLSearchParams(initData).get("start_param") ?? undefined;
       return res.json({
         userId: uid,
         user: verified.user,

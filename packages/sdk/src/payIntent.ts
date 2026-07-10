@@ -65,15 +65,27 @@ export function buildPayParam(
   return `pay_${addr}${amt}${tok}`;
 }
 
-/** Full t.me deep link that opens the Mini App with this intent. */
+/**
+ * Full t.me deep link that opens the Mini App with this intent.
+ *
+ * Default form is the bot-level MAIN Mini App link
+ * (t.me/<bot>?startapp=…) — field-verified to launch directly with the
+ * parameter on iOS. The named form (t.me/<bot>/<appName>?startapp=…)
+ * requires a BotFather /newapp registration under that short name; without
+ * it, Telegram detours through the bot chat and DROPS the parameter. Pass
+ * `appName` only if that registration exists.
+ */
 export function buildPayLink(
   botUsername: string,
   to: string,
   amountHbar?: string | number,
   tokenId?: string,
-  appName = "app",
+  appName?: string,
 ): string {
-  return `https://t.me/${botUsername}/${appName}?startapp=${buildPayParam(to, amountHbar, tokenId)}`;
+  const param = buildPayParam(to, amountHbar, tokenId);
+  return appName
+    ? `https://t.me/${botUsername}/${appName}?startapp=${param}`
+    : `https://t.me/${botUsername}?startapp=${param}`;
 }
 
 /**

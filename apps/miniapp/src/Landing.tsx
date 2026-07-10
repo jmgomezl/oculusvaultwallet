@@ -5,7 +5,9 @@ const GITHUB = "https://github.com/jmgomezl/oculusvaultwallet";
 /** Set VITE_BOT_USERNAME once the BotFather bot exists — the Telegram CTAs go
  * live automatically. Until then they show an honest "launching soon" state. */
 const BOT = import.meta.env.VITE_BOT_USERNAME ?? "";
-const TG_LINK = BOT ? `https://t.me/${BOT}/app` : null;
+// Bot-level Main-Mini-App launch (?startapp) — opens the app directly; the
+// /app named form needs a BotFather /newapp registration we don't rely on.
+const TG_LINK = BOT ? `https://t.me/${BOT}?startapp` : null;
 /** Set VITE_CWS_URL to the Chrome Web Store listing once the extension clears
  * review — the desktop CTAs go live automatically. Until then they show an
  * honest "in review" state. */
