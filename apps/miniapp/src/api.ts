@@ -24,6 +24,10 @@ export interface AuthResult {
   userId: string;
   user: { id: number; username?: string; first_name?: string };
   token: string;
+  /** Deep-link start parameter from the server-verified initData (the HMAC
+   * covers it) — more reliable than client-side extraction on some
+   * platforms. */
+  startParam?: string;
   demo?: boolean;
 }
 

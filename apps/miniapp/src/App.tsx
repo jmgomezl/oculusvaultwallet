@@ -137,8 +137,10 @@ function WalletApp() {
   const [pkRecord, setPkRecord] = useState<string | null>(null);
   const [pkOffer, setPkOffer] = useState(false);
   /** A pay deep-link is surfaced from the very first screen, so the "you
-   * came here to pay someone" thread never drops across unlock/create. */
-  const [pendingPay] = useState<PayIntent | null>(() =>
+   * came here to pay someone" thread never drops across unlock/create.
+   * Primary source: the SERVER-verified start param from auth (client-side
+   * extraction proved unreliable on iOS); webview parsing is the fallback. */
+  const [pendingPay, setPendingPay] = useState<PayIntent | null>(() =>
     parsePayIntent(getStartParam() ?? ""),
   );
 
@@ -147,6 +149,10 @@ function WalletApp() {
       try {
         const a = await authenticate();
         setAuth(a);
+        if (a.startParam) {
+          const verified = parsePayIntent(a.startParam);
+          if (verified) setPendingPay(verified);
+        }
         walletRef.current = createWallet(loadSavedNetwork());
         const exists = await walletRef.current.hasWallet(a.userId);
         setIsNew(!exists);
@@ -360,6 +366,7 @@ function WalletApp() {
         passkeyOffer={pkOffer}
         onEnablePasskey={onEnablePasskey}
         onDismissPasskey={() => setPkOffer(false)}
+        intent={pendingPay}
       />
     </>
   );
@@ -668,6 +675,7 @@ function Dashboard({
   passkeyOffer,
   onEnablePasskey,
   onDismissPasskey,
+  intent,
 }: {
   wallet: OculusVault;
   identity: WalletIdentity;
@@ -678,11 +686,10 @@ function Dashboard({
   passkeyOffer: boolean;
   onEnablePasskey: () => Promise<void>;
   onDismissPasskey: () => void;
+  /** A pay deep-link (NFC tag / QR / t.me link) jumps straight to Send.
+   * Resolved by WalletApp (server-verified source preferred). */
+  intent: PayIntent | null;
 }) {
-  // A pay deep-link (NFC tag / QR / t.me link) jumps straight to Send.
-  const [intent] = useState<PayIntent | null>(() =>
-    parsePayIntent(getStartParam() ?? ""),
-  );
   const [view, setView] = useState<View>(intent ? "send" : "home");
   const [balance, setBalance] = useState<Balance | null>(null);
   const [tokens, setTokens] = useState<TokenBalance[]>([]);

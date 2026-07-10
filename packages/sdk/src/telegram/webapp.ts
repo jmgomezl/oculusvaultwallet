@@ -77,7 +77,15 @@ export function getStartParam(): string | null {
     const fromHash = new URLSearchParams(
       String(loc?.hash ?? "").replace(/^#/, ""),
     );
-    return fromHash.get("tgWebAppStartParam") ?? fromHash.get("startapp");
+    const inHash =
+      fromHash.get("tgWebAppStartParam") ?? fromHash.get("startapp");
+    if (inHash) return inHash;
+    // Last resort: tgWebAppData is itself a URL-encoded query string whose
+    // fields include start_param — parse the launch data directly in case
+    // the platform exposed neither of the friendlier forms.
+    const rawData = fromHash.get("tgWebAppData");
+    if (rawData) return new URLSearchParams(rawData).get("start_param");
+    return null;
   } catch {
     return null;
   }

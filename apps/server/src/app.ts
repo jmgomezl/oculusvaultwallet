@@ -152,9 +152,15 @@ export function createApp(deps: AppDeps = {}): Express {
     try {
       const verified = verifyAcrossApps(initData, appId);
       const uid = String(verified.user.id);
+      // Echo the deep-link start parameter from the VERIFIED payload — the
+      // HMAC covers it, and client-side extraction is flaky across Telegram
+      // platforms (observed missing on iOS despite a correct launch link).
+      const startParam =
+        new URLSearchParams(initData).get("start_param") ?? undefined;
       return res.json({
         userId: uid,
         user: verified.user,
+        startParam,
         token: issueSession({ uid, username: verified.user.username }),
       });
     } catch (err) {
