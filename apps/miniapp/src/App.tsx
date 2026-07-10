@@ -24,8 +24,11 @@ import {
   isPasskeyPrfLikelySupported,
   createPasskeyQuickUnlock,
   unlockWithPasskeyQuickUnlock,
+  type AgentView,
+  type CreateAgentResult,
   type NetworkNode,
   type NftItem,
+  type SendResult,
   type StakingInfo,
   type TopicMessage,
   type TopicRef,
@@ -1058,6 +1061,14 @@ function Dashboard({
       />
 
       <div className="svc-label">Services</div>
+      <Drawer title="Agent Desk" sum="accounts for your AI agents">
+        <AgentDeskCard
+          wallet={wallet}
+          network={network}
+          accountReady={identity.hederaAccountId != null}
+          onChanged={refresh}
+        />
+      </Drawer>
       {nfts.length > 0 && (
         <Drawer title="Collectibles" sum={`${nfts.length} item${nfts.length === 1 ? "" : "s"}`}>
           <NftCard nfts={nfts} wallet={wallet} onChanged={refresh} />
@@ -2302,6 +2313,369 @@ function ConnectCard({
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Agent Desk — accounts for AI agents, with the owner as protocol-level
+ * co-owner. Every control here is enforced by the account's on-chain key
+ * structure (a 1-of-2 KeyList), never by policy: Freeze rotates the agent's
+ * key out, Sweep pulls funds home, Retire deletes the account. The agent's
+ * private key is shown ONCE at creation and never stored — a lost key is
+ * re-issued, not recovered.
+ */
+function AgentDeskCard({
+  wallet,
+  network,
+  accountReady,
+  onChanged,
+}: {
+  wallet: OculusVault;
+  network: HederaNetwork;
+  accountReady: boolean;
+  onChanged: () => void;
+}) {
+  const [agents, setAgents] = useState<AgentView[] | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [initial, setInitial] = useState("5");
+  const [busy, setBusy] = useState(false);
+  /** Account id an action is running against (per-row spinners). */
+  const [busyOn, setBusyOn] = useState<string>("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+  const [creds, setCreds] = useState<CreateAgentResult["credentials"] | null>(null);
+  const [credName, setCredName] = useState("");
+  const [copied, setCopied] = useState("");
+  const [fundOpen, setFundOpen] = useState<string | null>(null);
+  const [fundAmt, setFundAmt] = useState("");
+  const [confirmRetire, setConfirmRetire] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setAgents(await wallet.listAgents());
+    } catch {
+      /* transient mirror/vault failure — keep whatever we have */
+    }
+  }, [wallet]);
+
+  useEffect(() => {
+    if (accountReady && wallet.agentsEnabled) void load();
+  }, [accountReady, load, wallet]);
+
+  const copy = (text: string, tag: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      haptic("tap");
+      setCopied(tag);
+      setTimeout(() => setCopied(""), 1500);
+    });
+  };
+
+  /** Run a per-agent action, then reload after the mirror catches up. */
+  const act = async (
+    accountId: string,
+    run: () => Promise<SendResult>,
+    doneText: string,
+  ) => {
+    setMsg(null);
+    setBusyOn(accountId);
+    try {
+      const r = await run();
+      haptic("success");
+      setMsg({ ok: true, text: `${doneText} · ${r.status}`, url: r.hashscanUrl });
+      onChanged();
+      void load();
+      setTimeout(() => void load(), 5000); // key/balance changes lag on the mirror
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusyOn("");
+      setConfirmRetire(null);
+      setFundOpen(null);
+      setFundAmt("");
+    }
+  };
+
+  const create = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await wallet.createAgent(name.trim(), initial.trim());
+      haptic("success");
+      setCreds(r.credentials);
+      setCredName(r.agent.name);
+      setCreating(false);
+      setName("");
+      setInitial("5");
+      onChanged();
+      void load();
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!accountReady) {
+    return (
+      <div className="card">
+        <h3>Agent Desk</h3>
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> The desk opens once
+          your account exists — receive any HBAR first.
+        </p>
+      </div>
+    );
+  }
+
+  // Show-once credential handoff — the only moment the agent key exists here.
+  if (creds) {
+    const credJson = JSON.stringify(
+      {
+        network: creds.network,
+        accountId: creds.accountId,
+        privateKey: creds.privateKeyHex,
+        publicKey: creds.publicKeyHex,
+      },
+      null,
+      2,
+    );
+    const envBlock = [
+      `# ${credName} — OculusVault agent (${creds.network})`,
+      `HEDERA_NETWORK=${creds.network}`,
+      `HEDERA_ACCOUNT_ID=${creds.accountId}`,
+      `HEDERA_PRIVATE_KEY=${creds.privateKeyHex}`,
+    ].join("\n");
+    return (
+      <div className="card">
+        <h3>“{credName}” is hired</h3>
+        <p className="small">
+          <strong>This is shown once.</strong>{" "}
+          <span className="muted">
+            Paste these credentials into your agent's runtime now — the key is
+            not stored anywhere. If it's ever lost or leaked: Freeze, then
+            Unfreeze re-issues a fresh key.
+          </span>
+        </p>
+        <div className="acct-row">
+          <code className="addr" onClick={() => copy(creds.accountId, "aid")}>
+            {creds.accountId}
+          </code>
+          <button className="btn sm" onClick={() => copy(creds.accountId, "aid")}>
+            {copied === "aid" ? "✓" : "Copy"}
+          </button>
+        </div>
+        <div className="qr-frame">
+          <Qr value={credJson} />
+        </div>
+        <div className="req-actions">
+          <button className="btn primary" onClick={() => copy(envBlock, "env")}>
+            {copied === "env" ? "Copied ✓" : "Copy .env block"}
+          </button>
+          <button className="btn" onClick={() => copy(credJson, "json")}>
+            {copied === "json" ? "Copied ✓" : "Copy JSON"}
+          </button>
+        </div>
+        <code className="addr req-preview" onClick={() => copy(envBlock, "env")}>
+          {envBlock}
+        </code>
+        <button
+          className="btn ghost"
+          onClick={() => {
+            setCreds(null);
+            setCredName("");
+          }}
+        >
+          I've handed the credentials over — close
+        </button>
+      </div>
+    );
+  }
+
+  const active = (agents ?? []).filter((a) => a.status !== "retired");
+  const retired = (agents ?? []).filter((a) => a.status === "retired");
+
+  return (
+    <div className="card">
+      <h3>Agent Desk</h3>
+      <p className="muted small">
+        Give an AI agent its own petty-cash account. You stay co-owner at the
+        protocol level: freeze it, sweep the funds home, or retire it at any
+        time — no cooperation from the agent needed.
+      </p>
+
+      {agents == null ? (
+        <p className="muted xsmall">Opening the ledger…</p>
+      ) : (
+        active.map((a) => (
+          <div className="agent-row" key={a.accountId}>
+            <div className="agent-head">
+              <strong>{a.name}</strong>
+              <span className={a.status === "frozen" ? "agent-stamp frozen" : "agent-stamp"}>
+                {a.status}
+              </span>
+              <span className="agent-bal">{formatHbar(a.balanceHbar)} ℏ</span>
+            </div>
+            <div className="id-row">
+              <button className="chip" onClick={() => copy(a.accountId, a.accountId)}>
+                {copied === a.accountId ? "copied ✓" : a.accountId}
+              </button>
+              <a className="chip" href={a.hashscanUrl} target="_blank" rel="noreferrer">
+                activity ↗
+              </a>
+            </div>
+            {fundOpen === a.accountId ? (
+              <div className="input-row">
+                <input
+                  className="input"
+                  placeholder="Amount (HBAR)"
+                  inputMode="decimal"
+                  value={fundAmt}
+                  autoFocus
+                  onChange={(e) => setFundAmt(e.target.value)}
+                />
+                <button
+                  className="btn sm"
+                  disabled={busyOn !== "" || !fundAmt || Number(fundAmt) <= 0}
+                  onClick={() =>
+                    act(a.accountId, () => wallet.fundAgent(a.accountId, fundAmt.trim()),
+                      `Refilled ${a.name} with ${formatHbar(fundAmt)} ℏ`)
+                  }
+                >
+                  {busyOn === a.accountId ? "…" : "Fund"}
+                </button>
+                <button className="btn ghost sm" onClick={() => setFundOpen(null)}>
+                  ✕
+                </button>
+              </div>
+            ) : confirmRetire === a.accountId ? (
+              <div className="agent-actions">
+                <span className="muted xsmall">
+                  Retire {a.name}? Its account is deleted and the remaining{" "}
+                  {formatHbar(a.balanceHbar)} ℏ returns to you. Final.
+                </span>
+                <button
+                  className="btn sm danger"
+                  disabled={busyOn !== ""}
+                  onClick={() =>
+                    act(a.accountId, () => wallet.retireAgent(a.accountId), `${a.name} retired`)
+                  }
+                >
+                  {busyOn === a.accountId ? "…" : "Retire — I'm sure"}
+                </button>
+                <button className="btn ghost sm" onClick={() => setConfirmRetire(null)}>
+                  Keep
+                </button>
+              </div>
+            ) : (
+              <div className="agent-actions">
+                <button
+                  className="btn sm"
+                  disabled={busyOn !== ""}
+                  onClick={() => { setFundOpen(a.accountId); setFundAmt(""); }}
+                >
+                  Fund
+                </button>
+                {a.status === "frozen" ? (
+                  <button
+                    className="btn sm"
+                    disabled={busyOn !== ""}
+                    onClick={() =>
+                      act(a.accountId, () => wallet.unfreezeAgent(a.accountId),
+                        `${a.name} unfrozen — its key works again`)
+                    }
+                  >
+                    {busyOn === a.accountId ? "…" : "Unfreeze"}
+                  </button>
+                ) : (
+                  <button
+                    className="btn sm"
+                    disabled={busyOn !== ""}
+                    onClick={() =>
+                      act(a.accountId, () => wallet.freezeAgent(a.accountId),
+                        `${a.name} frozen — its key no longer signs`)
+                    }
+                  >
+                    {busyOn === a.accountId ? "…" : "Freeze"}
+                  </button>
+                )}
+                <button
+                  className="btn sm"
+                  disabled={busyOn !== "" || a.balanceTinybar <= 0n}
+                  title="Pull the whole balance back to your wallet"
+                  onClick={() =>
+                    act(a.accountId, () => wallet.sweepAgent(a.accountId),
+                      `Swept ${formatHbar(a.balanceHbar)} ℏ home from ${a.name}`)
+                  }
+                >
+                  {busyOn === a.accountId ? "…" : "Sweep"}
+                </button>
+                <button
+                  className="btn ghost sm"
+                  disabled={busyOn !== ""}
+                  onClick={() => setConfirmRetire(a.accountId)}
+                >
+                  Retire
+                </button>
+              </div>
+            )}
+          </div>
+        ))
+      )}
+      {retired.length > 0 && (
+        <p className="muted xsmall">
+          {retired.length} retired agent{retired.length === 1 ? "" : "s"} in the
+          ledger: {retired.map((a) => a.name).join(", ")}.
+        </p>
+      )}
+
+      {!creating ? (
+        <button className="btn" disabled={busy} onClick={() => { setMsg(null); setCreating(true); }}>
+          Hire an agent
+        </button>
+      ) : (
+        <>
+          <input
+            className="input"
+            placeholder="Agent name (e.g. shopper)"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            className="input"
+            placeholder="Petty cash (HBAR)"
+            inputMode="decimal"
+            value={initial}
+            onChange={(e) => setInitial(e.target.value)}
+          />
+          <p className="muted xsmall">
+            Creates a real Hedera account (~$0.05 fee) funded with{" "}
+            {initial && Number(initial) > 0 ? `${formatHbar(initial)} ℏ` : "the amount above"}{" "}
+            from this wallet — that's the agent's whole budget. Its private key
+            appears ONCE on the next screen.
+            {network === "mainnet" ? " Mainnet — real HBAR." : ""}
+          </p>
+          <button
+            className="btn primary"
+            disabled={busy || !name.trim() || !initial || Number(initial) <= 0}
+            onClick={create}
+          >
+            {busy ? "Hiring…" : "Create agent account"}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={() => setCreating(false)}>
+            Cancel
+          </button>
+        </>
+      )}
+      {msg && (
+        <p className={msg.ok ? "success" : "error"}>
+          {msg.text}{" "}
+          {msg.url && <a className="link" href={msg.url} target="_blank" rel="noreferrer">View ↗</a>}
+        </p>
       )}
     </div>
   );

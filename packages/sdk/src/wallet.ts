@@ -11,12 +11,25 @@
  * `userId` is the VERIFIED Telegram user id (from the backend's initData
  * check). It is used ONLY to namespace storage — never as key material.
  */
+import {
+  decryptAgentRegistry,
+  encryptAgentRegistry,
+  type AgentRecord,
+} from "./agentRegistry.js";
 import type { UserSecret } from "./crypto/encryption.js";
 import { fromPrivateKey } from "./crypto/keys.js";
+import {
+  createAgentAccount,
+  freezeAgent as freezeAgentTx,
+  retireAgent as retireAgentTx,
+  sweepAgent as sweepAgentTx,
+  unfreezeAgent as unfreezeAgentTx,
+  type CreateAgentAccountResult,
+} from "./hedera/agents.js";
 import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
 import { createTopic, submitTopicMessage, type CreateTopicResult } from "./hedera/consensus.js";
 import { executeContract, type ExecuteContractArgs } from "./hedera/contract.js";
-import { MirrorClient } from "./hedera/mirror.js";
+import { MirrorClient, tinybarToHbar } from "./hedera/mirror.js";
 import { setStaking } from "./hedera/staking.js";
 import { parseTokenAmount } from "./hedera/tokenAmount.js";
 import {
@@ -28,6 +41,7 @@ import {
 } from "./hedera/tokens.js";
 import { sendHbar } from "./hedera/transfer.js";
 import type { KeyProvider } from "./keyprovider/KeyProvider.js";
+import type { Storage } from "./storage/Storage.js";
 import type {
   Balance,
   HederaNetwork,
@@ -51,6 +65,10 @@ export interface OculusVaultOptions {
   storageNamespace?: string;
   /** Override the fetch used by the Mirror client (tests / custom proxy). */
   fetchImpl?: typeof fetch;
+  /** Where the encrypted agent registry lives (Agent Desk). Uses the same
+   * Storage contract as the vault — pass a RemoteVaultStorage pointed at the
+   * agents slot, or any local Storage. Omit to disable agent management. */
+  agentStorage?: Storage;
 }
 
 export interface UnlockArgs {
@@ -71,11 +89,38 @@ export interface OnIncomingOptions {
   replayExisting?: boolean;
 }
 
+/** An agent as the Desk shows it: the registry record joined with live
+ * on-chain facts (balance, real key state). */
+export interface AgentView extends AgentRecord {
+  balanceHbar: string;
+  balanceTinybar: bigint;
+  /** Status reconciled against the chain's key structure — "frozen" means
+   * the account key is currently the owner's key alone. */
+  status: "active" | "frozen" | "retired";
+  hashscanUrl: string;
+}
+
+export interface CreateAgentResult {
+  agent: AgentRecord;
+  /** SHOW ONCE, then drop: the agent's private key never persists anywhere.
+   * A lost key is re-issued via freeze → unfreeze with a fresh key. */
+  credentials: {
+    network: HederaNetwork;
+    accountId: string;
+    privateKeyHex: string;
+    publicKeyHex: string;
+  };
+  transactionId: string;
+  hashscanUrl: string;
+  status: string;
+}
+
 export class OculusVault {
   private _network: HederaNetwork;
   private readonly keyProvider: KeyProvider;
   private readonly namespace: string;
   private readonly fetchImpl?: typeof fetch;
+  private readonly agentStorage?: Storage;
   private mirror: MirrorClient;
 
   private privateKeyHex: string | null = null;
@@ -88,6 +133,7 @@ export class OculusVault {
     this.keyProvider = opts.keyProvider;
     this.namespace = opts.storageNamespace ?? "oculusvault:wallet:v1";
     this.fetchImpl = opts.fetchImpl;
+    this.agentStorage = opts.agentStorage;
     this.mirror = new MirrorClient(
       getNetworkConfig(opts.network),
       opts.fetchImpl,
@@ -476,6 +522,228 @@ export class OculusVault {
       privateKeyHex: this.privateKeyHex!,
       nodeId,
     });
+  }
+
+  // --- Agent Desk (Tier 1: petty-cash agent accounts) ---
+
+  private agentStorageKey(): string {
+    if (!this.userId) throw new Error("Wallet has no user context");
+    return `oculusvault:agents:v1:${this.userId}`;
+  }
+
+  private requireAgentStorage(): Storage {
+    if (!this.agentStorage) {
+      throw new Error("Agent Desk is not enabled — no agent storage configured");
+    }
+    return this.agentStorage;
+  }
+
+  private async loadAgents(): Promise<AgentRecord[]> {
+    const raw = await this.requireAgentStorage().getItem(this.agentStorageKey());
+    if (!raw) return [];
+    this.requireUnlocked();
+    return decryptAgentRegistry(JSON.parse(raw), this.privateKeyHex!);
+  }
+
+  private async saveAgents(records: AgentRecord[]): Promise<void> {
+    this.requireUnlocked();
+    const encrypted = encryptAgentRegistry(records, this.privateKeyHex!);
+    await this.requireAgentStorage().setItem(
+      this.agentStorageKey(),
+      JSON.stringify(encrypted),
+    );
+  }
+
+  private async updateAgentRecord(
+    accountId: string,
+    patch: Partial<AgentRecord>,
+  ): Promise<void> {
+    const records = await this.loadAgents();
+    const idx = records.findIndex(
+      (r) => r.accountId === accountId && r.network === this.network,
+    );
+    if (idx < 0) return; // acting on an unregistered agent is fine — chain is truth
+    records[idx] = { ...records[idx]!, ...patch };
+    await this.saveAgents(records);
+  }
+
+  /** Whether this wallet instance can manage agents. */
+  get agentsEnabled(): boolean {
+    return this.agentStorage != null;
+  }
+
+  /** Agents on the current network, joined with live on-chain state. */
+  async listAgents(): Promise<AgentView[]> {
+    const records = (await this.loadAgents()).filter(
+      (r) => r.network === this.network,
+    );
+    return Promise.all(
+      records.map(async (r) => {
+        let status: AgentView["status"] = r.retiredAt
+          ? "retired"
+          : r.frozen
+            ? "frozen"
+            : "active";
+        let balanceTinybar = 0n;
+        if (!r.retiredAt) {
+          // The chain is the source of truth; the stored flag is a hint.
+          try {
+            const flags = await this.mirror.getAccountFlags(r.accountId);
+            if (flags) {
+              balanceTinybar = flags.balanceTinybar;
+              status = flags.deleted
+                ? "retired"
+                : flags.keyIsComplex
+                  ? "active"
+                  : "frozen";
+            }
+          } catch {
+            // Mirror hiccups must not hide the agent — fall back to the hint.
+          }
+        }
+        return {
+          ...r,
+          balanceTinybar,
+          balanceHbar: tinybarToHbar(balanceTinybar),
+          status,
+          hashscanUrl: this.accountUrl(r.accountId),
+        } satisfies AgentView;
+      }),
+    );
+  }
+
+  /**
+   * Create a petty-cash agent account (1-of-2 KeyList [owner, agent]) funded
+   * from this wallet, and register it. The returned credentials are shown
+   * ONCE and never stored — hand them to the agent runtime.
+   */
+  async createAgent(
+    name: string,
+    initialHbar: string | number,
+  ): Promise<CreateAgentResult> {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 40) throw new Error("Agent name: 1–40 characters");
+    this.requireUnlocked();
+    this.requireAgentStorage();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    const created: CreateAgentAccountResult = await createAgentAccount({
+      network: this.network,
+      ownerAccountId: accountId,
+      ownerPrivateKeyHex: this.privateKeyHex!,
+      initialHbar,
+      memo: `oculusvault agent: ${trimmed}`,
+    });
+    const record: AgentRecord = {
+      accountId: created.accountId,
+      name: trimmed,
+      network: this.network,
+      agentPublicKeyHex: created.agentPublicKeyHex,
+      frozen: false,
+      createdAt: new Date().toISOString(),
+    };
+    const records = await this.loadAgents();
+    records.push(record);
+    await this.saveAgents(records);
+    return {
+      agent: record,
+      credentials: {
+        network: this.network,
+        accountId: created.accountId,
+        privateKeyHex: created.agentPrivateKeyHex,
+        publicKeyHex: created.agentPublicKeyHex,
+      },
+      transactionId: created.transactionId,
+      hashscanUrl: created.hashscanUrl,
+      status: created.status,
+    };
+  }
+
+  /** Top up an agent's petty cash from this wallet. */
+  async fundAgent(agentAccountId: string, amountHbar: string | number): Promise<SendResult> {
+    return this.send(agentAccountId, amountHbar, "oculusvault agent refill");
+  }
+
+  /** Freeze: rotate the agent's key out — it stops spending instantly. */
+  async freezeAgent(agentAccountId: string): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) throw new Error("Wallet has no on-ledger account");
+    const result = await freezeAgentTx({
+      network: this.network,
+      ownerAccountId: accountId,
+      ownerPrivateKeyHex: this.privateKeyHex!,
+      agentAccountId,
+    });
+    await this.updateAgentRecord(agentAccountId, { frozen: true });
+    return result;
+  }
+
+  /** Unfreeze: restore the 1-of-2 KeyList so the agent's key works again. */
+  async unfreezeAgent(agentAccountId: string): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) throw new Error("Wallet has no on-ledger account");
+    const records = await this.loadAgents();
+    const record = records.find(
+      (r) => r.accountId === agentAccountId && r.network === this.network,
+    );
+    if (!record) throw new Error("Unknown agent — it isn't in your registry");
+    const result = await unfreezeAgentTx({
+      network: this.network,
+      ownerAccountId: accountId,
+      ownerPrivateKeyHex: this.privateKeyHex!,
+      agentAccountId,
+      agentPublicKeyHex: record.agentPublicKeyHex,
+    });
+    await this.updateAgentRecord(agentAccountId, { frozen: false });
+    return result;
+  }
+
+  /** Sweep the agent's ENTIRE balance back to this wallet (owner-signed). */
+  async sweepAgent(agentAccountId: string): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) throw new Error("Wallet has no on-ledger account");
+    const flags = await this.mirror.getAccountFlags(agentAccountId);
+    if (!flags || flags.balanceTinybar <= 0n) {
+      throw new Error("Nothing to sweep — the agent's balance is 0 ℏ");
+    }
+    return sweepAgentTx({
+      network: this.network,
+      ownerAccountId: accountId,
+      ownerPrivateKeyHex: this.privateKeyHex!,
+      agentAccountId,
+      amountTinybar: flags.balanceTinybar,
+      memo: "oculusvault agent sweep",
+    });
+  }
+
+  /** Retire: delete the agent account, sweeping any remainder home. */
+  async retireAgent(agentAccountId: string): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) throw new Error("Wallet has no on-ledger account");
+    const result = await retireAgentTx({
+      network: this.network,
+      ownerAccountId: accountId,
+      ownerPrivateKeyHex: this.privateKeyHex!,
+      agentAccountId,
+    });
+    await this.updateAgentRecord(agentAccountId, {
+      retiredAt: new Date().toISOString(),
+      frozen: false,
+    });
+    return result;
+  }
+
+  /** Recent activity of one agent account (public mirror data). */
+  async getAgentHistory(agentAccountId: string): Promise<HistoryItem[]> {
+    return this.mirror.getHistory(agentAccountId, { limit: 10 });
   }
 
   /**

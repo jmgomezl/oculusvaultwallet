@@ -340,6 +340,51 @@ a.chip {
   transform: rotate(-2deg);
 }
 
+/* ── agent desk ─────────────────────────────────────────────────────── */
+.agent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 0;
+  border-top: 1px dashed color-mix(in srgb, var(--ink) 30%, transparent);
+}
+.agent-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.agent-bal {
+  margin-left: auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.agent-stamp {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1.5px solid var(--green);
+  border-radius: 5px;
+  color: var(--green);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  transform: rotate(-2deg);
+}
+.agent-stamp.frozen {
+  border-color: var(--red);
+  color: var(--red);
+}
+.agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.btn.danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+
 /* ── cards: certificate blocks ──────────────────────────────────────── */
 .card {
   background: var(--paper);

@@ -16,17 +16,22 @@ export interface RemoteVaultOptions {
   apiBase: string;
   /** Returns the current session JWT (from POST /api/auth/verify). */
   getToken: () => string | null | Promise<string | null>;
+  /** Vault slot path. Defaults to the wallet record ("/api/vault"); the
+   * Agent Desk registry lives in its own slot ("/api/vault/agents"). */
+  path?: string;
   fetchImpl?: typeof fetch;
 }
 
 export class RemoteVaultStorage implements Storage {
   private readonly apiBase: string;
   private readonly getToken: RemoteVaultOptions["getToken"];
+  private readonly path: string;
   private readonly fetchImpl: typeof fetch;
 
   constructor(opts: RemoteVaultOptions) {
     this.apiBase = opts.apiBase.replace(/\/$/, "");
     this.getToken = opts.getToken;
+    this.path = opts.path ?? "/api/vault";
     this.fetchImpl = opts.fetchImpl ?? ((i, init) => fetch(i, init));
   }
 
@@ -37,7 +42,7 @@ export class RemoteVaultStorage implements Storage {
   }
 
   async getItem(_key: string): Promise<string | null> {
-    const res = await this.fetchImpl(`${this.apiBase}/api/vault`, {
+    const res = await this.fetchImpl(`${this.apiBase}${this.path}`, {
       headers: { ...(await this.authHeader()), accept: "application/json" },
     });
     if (res.status === 404) return null;
@@ -47,7 +52,7 @@ export class RemoteVaultStorage implements Storage {
   }
 
   async setItem(_key: string, value: string): Promise<void> {
-    const res = await this.fetchImpl(`${this.apiBase}/api/vault`, {
+    const res = await this.fetchImpl(`${this.apiBase}${this.path}`, {
       method: "PUT",
       headers: {
         ...(await this.authHeader()),
@@ -59,7 +64,7 @@ export class RemoteVaultStorage implements Storage {
   }
 
   async removeItem(_key: string): Promise<void> {
-    const res = await this.fetchImpl(`${this.apiBase}/api/vault`, {
+    const res = await this.fetchImpl(`${this.apiBase}${this.path}`, {
       method: "DELETE",
       headers: await this.authHeader(),
     });

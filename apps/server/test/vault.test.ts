@@ -169,6 +169,64 @@ test("Login Widget auth (extension) opens the SAME vault as Mini App auth", asyn
   assert.equal(forged.status, 401);
 });
 
+test("agents slot is independent of the wallet slot", async () => {
+  const token = await login(88, OCULUS_TOKEN);
+  // Nothing in either slot yet.
+  const emptyAgents = await fetch(`${base}/api/vault/agents`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(emptyAgents.status, 404);
+
+  // Writing the WALLET slot must not create the AGENTS slot…
+  await fetch(`${base}/api/vault`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ record: FAKE_RECORD }),
+  });
+  const stillEmpty = await fetch(`${base}/api/vault/agents`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(stillEmpty.status, 404);
+
+  // …and the agents slot stores its own ciphertext.
+  const AGENTS_RECORD = JSON.stringify({
+    version: 1,
+    ciphertext: "YWdlbnRzLWNpcGhlcnRleHQ",
+    nonce: "YWdlbnRzLW5vbmNl",
+  });
+  const put = await fetch(`${base}/api/vault/agents`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ record: AGENTS_RECORD }),
+  });
+  assert.equal(put.status, 200);
+  const got = await fetch(`${base}/api/vault/agents`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal((await got.json()).record, AGENTS_RECORD);
+  const wallet = await fetch(`${base}/api/vault`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal((await wallet.json()).record, FAKE_RECORD);
+
+  // Same encrypted-only rule applies to the agents slot.
+  const plaintext = await fetch(`${base}/api/vault/agents`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ record: JSON.stringify({ agents: ["0.0.1"] }) }),
+  });
+  assert.equal(plaintext.status, 422);
+
+  // Other users can't see it; unauthenticated access is rejected.
+  const other = await login(89, OCULUS_TOKEN);
+  const foreign = await fetch(`${base}/api/vault/agents`, {
+    headers: { authorization: `Bearer ${other}` },
+  });
+  assert.equal(foreign.status, 404);
+  const anon = await fetch(`${base}/api/vault/agents`);
+  assert.equal(anon.status, 401);
+});
+
 test("delete removes the record", async () => {
   const token = await login(42, OCULUS_TOKEN);
   const del = await fetch(`${base}/api/vault`, {

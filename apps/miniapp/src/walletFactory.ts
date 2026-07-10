@@ -33,11 +33,26 @@ function makeStorage(): Storage {
   return pickStorage();
 }
 
+/** The Agent Desk registry rides the same identity policy as the wallet
+ * record, in its own vault slot. It holds NO keys — encrypted agent metadata
+ * only (see agentRegistry.ts in the SDK). */
+function makeAgentStorage(): Storage {
+  if (isInsideTelegram() && USE_SHARED_VAULT && API_BASE) {
+    return new RemoteVaultStorage({
+      apiBase: API_BASE,
+      getToken,
+      path: "/api/vault/agents",
+    });
+  }
+  return pickStorage();
+}
+
 /** The vault record is network-independent (same key everywhere), so one
  * wallet instance serves every network via switchNetwork(). */
 export function createWallet(network: HederaNetwork = DEFAULT_NETWORK): OculusVault {
   return new OculusVault({
     network,
     keyProvider: new LocalEncryptedKeyProvider(makeStorage()),
+    agentStorage: makeAgentStorage(),
   });
 }

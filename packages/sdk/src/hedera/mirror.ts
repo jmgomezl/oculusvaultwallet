@@ -35,6 +35,20 @@ export interface ResolvedAccount {
   balanceTinybar: bigint;
 }
 
+/** On-chain facts about an account that drive agent status displays. */
+export interface AccountFlags {
+  accountId: string;
+  deleted: boolean;
+  /** True when the account key is a complex key (KeyList/threshold) — the
+   * mirror reports those as `_type: "ProtobufEncoded"`. An active 1-of-2
+   * agent account is complex; a frozen one (rotated to the owner's key
+   * alone) is a simple key. */
+  keyIsComplex: boolean;
+  /** Hex of the key material as the mirror reports it. */
+  keyHex: string | null;
+  balanceTinybar: bigint;
+}
+
 export class MirrorClient {
   private readonly cfg: NetworkConfig;
   private readonly fetchImpl: typeof fetch;
@@ -75,6 +89,26 @@ export class MirrorClient {
       return {
         accountId: data.account,
         evmAddress: data.evm_address ?? null,
+        balanceTinybar: BigInt(data.balance?.balance ?? 0),
+      };
+    } catch (err) {
+      if ((err as { status?: number }).status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Key structure + deleted flag + balance of an account (null when it
+   * doesn't exist). Deleted accounts still resolve on the mirror. */
+  async getAccountFlags(accountId: string): Promise<AccountFlags | null> {
+    try {
+      const data = await this.get<any>(
+        `/api/v1/accounts/${encodeURIComponent(accountId)}?limit=1`,
+      );
+      return {
+        accountId: data.account,
+        deleted: Boolean(data.deleted),
+        keyIsComplex: data.key?._type === "ProtobufEncoded",
+        keyHex: data.key?.key ?? null,
         balanceTinybar: BigInt(data.balance?.balance ?? 0),
       };
     } catch (err) {

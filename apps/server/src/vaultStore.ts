@@ -20,9 +20,9 @@ export class VaultStore {
   private readonly file: string;
   private readonly map: Map<string, VaultEntry>;
 
-  constructor(dataDir: string) {
+  constructor(dataDir: string, filename = "vault.json") {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
-    this.file = join(dataDir, "vault.json");
+    this.file = join(dataDir, filename);
     this.map = new Map();
     this.load();
   }

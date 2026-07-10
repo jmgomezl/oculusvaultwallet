@@ -41,6 +41,8 @@ export interface AppDeps {
   now?: () => number;
   /** Share a VaultStore with other components (e.g. the payment notifier). */
   vault?: VaultStore;
+  /** Store for the encrypted Agent Desk registry ("agents" vault slot). */
+  agentsVault?: VaultStore;
 }
 
 /** Minimal in-memory per-IP rate limiter (fixed window). Dependency-free so
@@ -87,6 +89,8 @@ export function createApp(deps: AppDeps = {}): Express {
 
   const mirror = new MirrorClient(getNetworkConfig(config.network));
   const vault = deps.vault ?? new VaultStore(config.vaultDataDir);
+  const agentsVault =
+    deps.agentsVault ?? new VaultStore(config.vaultDataDir, "agents.json");
 
   const issueSession = (claims: SessionClaims): string =>
     jwt.sign(claims, config.sessionSecret, {
@@ -211,39 +215,46 @@ export function createApp(deps: AppDeps = {}): Express {
   });
 
   // --- Shared non-custodial vault (ciphertext only) ---
-  app.get("/api/vault", requireSession, (req: Authed, res: Response) => {
-    const entry = vault.get(req.session!.uid);
-    if (!entry) return res.status(404).json({ error: "no_vault" });
-    res.json({ record: entry.record, updatedAt: entry.updatedAt });
-  });
+  // Two slots per user: the wallet record ("/api/vault") and the Agent Desk
+  // registry ("/api/vault/agents"). Same contract for both — the server only
+  // ever holds ciphertext it cannot decrypt.
+  const registerVaultSlot = (path: string, store: VaultStore): void => {
+    app.get(path, requireSession, (req: Authed, res: Response) => {
+      const entry = store.get(req.session!.uid);
+      if (!entry) return res.status(404).json({ error: "no_vault" });
+      res.json({ record: entry.record, updatedAt: entry.updatedAt });
+    });
 
-  app.put("/api/vault", vaultLimiter, requireSession, (req: Authed, res: Response) => {
-    const record: unknown = req.body?.record;
-    if (typeof record !== "string" || record.length === 0) {
-      return res.status(400).json({ error: "missing_record" });
-    }
-    if (Buffer.byteLength(record, "utf8") > config.vaultMaxBytes) {
-      return res.status(413).json({ error: "record_too_large" });
-    }
-    // Defense-in-depth: a real encrypted record is JSON with ciphertext + nonce.
-    // Reject anything that doesn't look like one (helps catch a client bug that
-    // would otherwise upload plaintext).
-    try {
-      const parsed = JSON.parse(record);
-      if (!parsed || typeof parsed.ciphertext !== "string" || !parsed.nonce) {
-        return res.status(422).json({ error: "not_an_encrypted_record" });
+    app.put(path, vaultLimiter, requireSession, (req: Authed, res: Response) => {
+      const record: unknown = req.body?.record;
+      if (typeof record !== "string" || record.length === 0) {
+        return res.status(400).json({ error: "missing_record" });
       }
-    } catch {
-      return res.status(422).json({ error: "record_not_json" });
-    }
-    vault.put(req.session!.uid, record, new Date(now()).toISOString());
-    res.json({ ok: true });
-  });
+      if (Buffer.byteLength(record, "utf8") > config.vaultMaxBytes) {
+        return res.status(413).json({ error: "record_too_large" });
+      }
+      // Defense-in-depth: a real encrypted record is JSON with ciphertext +
+      // nonce. Reject anything that doesn't look like one (helps catch a
+      // client bug that would otherwise upload plaintext).
+      try {
+        const parsed = JSON.parse(record);
+        if (!parsed || typeof parsed.ciphertext !== "string" || !parsed.nonce) {
+          return res.status(422).json({ error: "not_an_encrypted_record" });
+        }
+      } catch {
+        return res.status(422).json({ error: "record_not_json" });
+      }
+      store.put(req.session!.uid, record, new Date(now()).toISOString());
+      res.json({ ok: true });
+    });
 
-  app.delete("/api/vault", vaultLimiter, requireSession, (req: Authed, res: Response) => {
-    const had = vault.delete(req.session!.uid);
-    res.status(had ? 200 : 404).json({ ok: had });
-  });
+    app.delete(path, vaultLimiter, requireSession, (req: Authed, res: Response) => {
+      const had = store.delete(req.session!.uid);
+      res.status(had ? 200 : 404).json({ ok: had });
+    });
+  };
+  registerVaultSlot("/api/vault", vault);
+  registerVaultSlot("/api/vault/agents", agentsVault);
 
   // --- Mirror Node read proxy ---
   app.get("/api/balance/:acct", async (req: Request, res: Response) => {

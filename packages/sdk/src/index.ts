@@ -11,7 +11,30 @@ export type {
   OculusVaultOptions,
   UnlockArgs,
   OnIncomingOptions,
+  AgentView,
+  CreateAgentResult,
 } from "./wallet.js";
+
+// Agent Desk
+export {
+  encryptAgentRegistry,
+  decryptAgentRegistry,
+  type AgentRecord,
+  type EncryptedAgentRegistry,
+} from "./agentRegistry.js";
+export {
+  createAgentAccount,
+  freezeAgent,
+  unfreezeAgent,
+  sweepAgent,
+  retireAgent,
+  agentKeyList,
+  type CreateAgentAccountArgs,
+  type CreateAgentAccountResult,
+  type AgentControlArgs,
+  type UnfreezeAgentArgs,
+  type SweepAgentArgs,
+} from "./hedera/agents.js";
 
 // Types
 export type {
@@ -86,7 +109,7 @@ export {
   hashscanAccountUrl,
   type NetworkConfig,
 } from "./hedera/networks.js";
-export { MirrorClient, tinybarToHbar } from "./hedera/mirror.js";
+export { MirrorClient, tinybarToHbar, type AccountFlags } from "./hedera/mirror.js";
 export { sendHbar, type SendArgs } from "./hedera/transfer.js";
 export {
   sendToken,
