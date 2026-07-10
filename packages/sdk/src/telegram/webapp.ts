@@ -66,8 +66,18 @@ export function getStartParam(): string | null {
   const fromInit = getTelegramWebApp()?.initDataUnsafe?.start_param;
   if (fromInit) return fromInit;
   try {
-    const usp = new URLSearchParams((globalThis as any)?.location?.search ?? "");
-    return usp.get("tgWebAppStartParam") ?? usp.get("startapp");
+    const loc = (globalThis as any)?.location;
+    const fromSearch = new URLSearchParams(loc?.search ?? "");
+    const inSearch =
+      fromSearch.get("tgWebAppStartParam") ?? fromSearch.get("startapp");
+    if (inSearch) return inSearch;
+    // Telegram's web clients (WebK/WebA) deliver launch params in the HASH
+    // fragment, not the query string — a pay link opened there would lose
+    // its intent unless we look here too.
+    const fromHash = new URLSearchParams(
+      String(loc?.hash ?? "").replace(/^#/, ""),
+    );
+    return fromHash.get("tgWebAppStartParam") ?? fromHash.get("startapp");
   } catch {
     return null;
   }

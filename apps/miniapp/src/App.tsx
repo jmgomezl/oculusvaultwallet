@@ -79,6 +79,18 @@ function shortAddr(a: string): string {
   return a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a;
 }
 
+/** "2.5 ℏ to 0.0.7231440" — one human line for a pay intent. */
+function payLine(p: PayIntent): string {
+  const what = p.amountHbar
+    ? p.tokenId
+      ? `${p.amountHbar} of token ${p.tokenId}`
+      : `${formatHbar(p.amountHbar)} ℏ`
+    : p.tokenId
+      ? `token ${p.tokenId}`
+      : "a payment";
+  return `${what} to ${shortAddr(p.to)}`;
+}
+
 /** Device-local passkey quick-unlock record (per user). The password-encrypted
  * vault record stays canonical; this only caches a passkey-wrapped copy. */
 const pkqKey = (uid: string) => `oculusvault:pkq:${uid}`;
@@ -124,6 +136,11 @@ function WalletApp() {
   const [storedAddr, setStoredAddr] = useState<string | null>(null);
   const [pkRecord, setPkRecord] = useState<string | null>(null);
   const [pkOffer, setPkOffer] = useState(false);
+  /** A pay deep-link is surfaced from the very first screen, so the "you
+   * came here to pay someone" thread never drops across unlock/create. */
+  const [pendingPay] = useState<PayIntent | null>(() =>
+    parsePayIntent(getStartParam() ?? ""),
+  );
 
   useEffect(() => {
     (async () => {
@@ -311,6 +328,7 @@ function WalletApp() {
         onUnlock={onUnlock}
         onRecover={startRecover}
         onPasskeyUnlock={!isNew && pkRecord ? onPasskeyUnlock : undefined}
+        pendingPay={pendingPay}
       />
     );
   }
@@ -390,12 +408,14 @@ function UnlockScreen({
   onUnlock,
   onRecover,
   onPasskeyUnlock,
+  pendingPay,
 }: {
   isNew: boolean;
   username?: string;
   onUnlock: (pw: string) => Promise<void>;
   onRecover: () => void;
   onPasskeyUnlock?: () => Promise<void>;
+  pendingPay?: PayIntent | null;
 }) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -444,6 +464,18 @@ function UnlockScreen({
           ? "Pick a password. It encrypts your key on this device — we never see it, and it can’t be recovered if lost."
           : `${username ? "@" + username + " · " : ""}Enter your password to unlock.`}
       </p>
+      {pendingPay && (
+        <div className="banner">
+          <div>
+            <strong>Payment request waiting.</strong>
+            <span className="muted small">
+              {" "}This link asks you to send <strong>{payLine(pendingPay)}</strong> —{" "}
+              {isNew ? "create your vault" : "unlock"} to review it. Nothing is
+              sent without your confirmation.
+            </span>
+          </div>
+        </div>
+      )}
       <div className="card">
         {onPasskeyUnlock && (
           <>
@@ -1234,12 +1266,18 @@ function SendTab({
   if (!accountReady) {
     return (
       <div className="card center">
+        {prefill && (
+          <p className="small">
+            🧾 <strong>Payment request:</strong> {payLine(prefill)}
+          </p>
+        )}
         <p className="muted small">
-          <span className="pending-stamp">Pending</span> Your wallet can’t send
-          yet — it needs a first deposit to activate its Hedera account. Share
-          your address from <strong>Receive</strong>
+          <span className="pending-stamp">Pending</span>{" "}
+          {prefill ? "To pay it, your" : "Your"} wallet first needs a deposit
+          to activate its Hedera account. Share your address from{" "}
+          <strong>Receive</strong>
           {network === "testnet" ? " or claim free testnet ℏ from the faucet" : ""}
-          , then come back.
+          , then come back{prefill ? " — the request stays filled in, ready to confirm" : ""}.
         </p>
       </div>
     );
