@@ -2737,7 +2737,8 @@ function Header({
 function Footer() {
   return (
     <footer className="footer muted xsmall">
-      Non-custodial · keys stay on your device · open-source (Apache-2.0)
+      Non-custodial · keys stay on your device · open-source (Apache-2.0) ·
+      build {__BUILD_ID__}
     </footer>
   );
 }

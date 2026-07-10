@@ -17,6 +17,11 @@ export default defineConfig({
   define: {
     // @hashgraph/sdk and some deps expect a global in browser contexts.
     global: "globalThis",
+    // Visible in the footer — lets us tell which build a device is running
+    // (Telegram webviews cache aggressively).
+    __BUILD_ID__: JSON.stringify(
+      new Date().toISOString().slice(0, 16).replace("T", " ") + "Z",
+    ),
   },
   build: {
     rollupOptions: {
