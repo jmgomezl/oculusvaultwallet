@@ -2360,8 +2360,14 @@ function AgentDeskCard({
     }
   }, [wallet]);
 
+  // Keep the roster live: the mirror lags consensus by a few seconds, so a
+  // just-created (or just-spent-from) agent account reads stale on the first
+  // fetch. Poll while the drawer is mounted instead of trusting one read.
   useEffect(() => {
-    if (accountReady && wallet.agentsEnabled) void load();
+    if (!accountReady || !wallet.agentsEnabled) return;
+    void load();
+    const poll = setInterval(() => void load(), 8000);
+    return () => clearInterval(poll);
   }, [accountReady, load, wallet]);
 
   const copy = (text: string, tag: string) => {
@@ -2487,6 +2493,7 @@ function AgentDeskCard({
           onClick={() => {
             setCreds(null);
             setCredName("");
+            void load();
           }}
         >
           I've handed the credentials over — close
