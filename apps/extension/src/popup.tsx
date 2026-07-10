@@ -750,7 +750,7 @@ function Dashboard({
       <HistoryList items={history} />
 
       <footer className="footer muted xsmall">
-        Anchored to Telegram · non-custodial ·{" "}
+        Anchored to Telegram · non-custodial · v{chrome.runtime.getManifest().version} ·{" "}
         <button className="linklike" onClick={onDisconnect}>disconnect</button>
       </footer>
     </div>
