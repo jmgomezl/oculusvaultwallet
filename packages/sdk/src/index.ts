@@ -12,6 +12,7 @@ export type {
   UnlockArgs,
   OnIncomingOptions,
   AgentView,
+  AllowanceView,
   CreateAgentResult,
 } from "./wallet.js";
 
@@ -109,7 +110,16 @@ export {
   hashscanAccountUrl,
   type NetworkConfig,
 } from "./hedera/networks.js";
-export { MirrorClient, tinybarToHbar, type AccountFlags } from "./hedera/mirror.js";
+export {
+  MirrorClient,
+  tinybarToHbar,
+  type AccountFlags,
+  type AllowanceInfo,
+} from "./hedera/mirror.js";
+export {
+  approveAllowance,
+  type ApproveAllowanceArgs,
+} from "./hedera/allowances.js";
 export { sendHbar, type SendArgs } from "./hedera/transfer.js";
 export {
   sendToken,

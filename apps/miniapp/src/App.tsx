@@ -25,6 +25,7 @@ import {
   createPasskeyQuickUnlock,
   unlockWithPasskeyQuickUnlock,
   type AgentView,
+  type AllowanceView,
   type CreateAgentResult,
   type NetworkNode,
   type NftItem,
@@ -1066,6 +1067,7 @@ function Dashboard({
           wallet={wallet}
           network={network}
           accountReady={identity.hederaAccountId != null}
+          tokens={tokens}
           onChanged={refresh}
         />
       </Drawer>
@@ -2330,11 +2332,13 @@ function AgentDeskCard({
   wallet,
   network,
   accountReady,
+  tokens,
   onChanged,
 }: {
   wallet: OculusVault;
   network: HederaNetwork;
   accountReady: boolean;
+  tokens: TokenBalance[];
   onChanged: () => void;
 }) {
   const [agents, setAgents] = useState<AgentView[] | null>(null);
@@ -2351,6 +2355,22 @@ function AgentDeskCard({
   const [fundOpen, setFundOpen] = useState<string | null>(null);
   const [fundAmt, setFundAmt] = useState("");
   const [confirmRetire, setConfirmRetire] = useState<string | null>(null);
+  /** Tier 2: per-agent allowance panel (agent account id it's open for). */
+  const [allowOpen, setAllowOpen] = useState<string | null>(null);
+  const [allowances, setAllowances] = useState<AllowanceView[] | null>(null);
+  const [allowAsset, setAllowAsset] = useState<string>("hbar");
+  const [allowAmt, setAllowAmt] = useState("");
+
+  const loadAllowances = useCallback(
+    async (agentId: string) => {
+      try {
+        setAllowances(await wallet.getAgentAllowances(agentId));
+      } catch {
+        /* transient mirror failure — panel shows a loading line */
+      }
+    },
+    [wallet],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -2401,6 +2421,30 @@ function AgentDeskCard({
       setConfirmRetire(null);
       setFundOpen(null);
       setFundAmt("");
+    }
+  };
+
+  /** Allowance grant/revoke: like act(), but the panel stays open and the
+   * allowance list reloads (twice — the mirror lags consensus). */
+  const actKeepAllowances = async (
+    accountId: string,
+    run: () => Promise<SendResult>,
+    doneText: string,
+  ) => {
+    setMsg(null);
+    setBusyOn(accountId);
+    try {
+      const r = await run();
+      haptic("success");
+      setMsg({ ok: true, text: `${doneText} · ${r.status}`, url: r.hashscanUrl });
+      setAllowAmt("");
+      void loadAllowances(accountId);
+      setTimeout(() => void loadAllowances(accountId), 5000);
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusyOn("");
     }
   };
 
@@ -2558,6 +2602,87 @@ function AgentDeskCard({
                   ✕
                 </button>
               </div>
+            ) : allowOpen === a.accountId ? (
+              <div className="allow-panel">
+                {allowances == null ? (
+                  <p className="muted xsmall">Reading the ledger…</p>
+                ) : allowances.length === 0 ? (
+                  <p className="muted xsmall">
+                    No allowance yet — {a.name} can only spend its own petty
+                    cash. Grant one and it may also draw from YOUR balance, up
+                    to the cap. Network-enforced; revoke any time.
+                  </p>
+                ) : (
+                  allowances.map((al) => (
+                    <div className="acct-row" key={al.tokenId ?? "hbar"}>
+                      <span className="small">
+                        <strong>
+                          {formatHbar(al.remaining)} {al.symbol}
+                        </strong>{" "}
+                        <span className="muted xsmall">
+                          left of {formatHbar(al.granted)} granted
+                        </span>
+                      </span>
+                      <button
+                        className="btn sm danger"
+                        disabled={busyOn !== ""}
+                        onClick={() =>
+                          actKeepAllowances(a.accountId, () =>
+                            wallet.revokeAgentAllowance(a.accountId, al.tokenId ?? "hbar"),
+                            `Revoked ${a.name}'s ${al.symbol} allowance`)
+                        }
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  ))
+                )}
+                <div className="input-row">
+                  {tokens.length > 0 && (
+                    <select
+                      className="input"
+                      value={allowAsset}
+                      aria-label="Allowance asset"
+                      style={{ maxWidth: 110 }}
+                      onChange={(e) => setAllowAsset(e.target.value)}
+                    >
+                      <option value="hbar">ℏ</option>
+                      {tokens.map((t) => (
+                        <option key={t.tokenId} value={t.tokenId}>
+                          {t.symbol}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <input
+                    className="input"
+                    placeholder="Cap amount"
+                    inputMode="decimal"
+                    value={allowAmt}
+                    onChange={(e) => setAllowAmt(e.target.value)}
+                  />
+                  <button
+                    className="btn sm"
+                    disabled={busyOn !== "" || !allowAmt || Number(allowAmt) <= 0}
+                    onClick={() =>
+                      actKeepAllowances(a.accountId, () =>
+                        wallet.grantAgentAllowance(a.accountId, allowAsset, allowAmt.trim()),
+                        `Granted ${a.name} up to ${allowAmt} ${allowAsset === "hbar" ? "ℏ" : tokens.find((t) => t.tokenId === allowAsset)?.symbol ?? allowAsset} of your balance`)
+                    }
+                  >
+                    {busyOn === a.accountId ? "…" : "Grant"}
+                  </button>
+                </div>
+                <button
+                  className="btn ghost sm"
+                  onClick={() => {
+                    setAllowOpen(null);
+                    setAllowances(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
             ) : confirmRetire === a.accountId ? (
               <div className="agent-actions">
                 <span className="muted xsmall">
@@ -2585,6 +2710,19 @@ function AgentDeskCard({
                   onClick={() => { setFundOpen(a.accountId); setFundAmt(""); }}
                 >
                   Fund
+                </button>
+                <button
+                  className="btn sm"
+                  disabled={busyOn !== ""}
+                  onClick={() => {
+                    setAllowOpen(a.accountId);
+                    setAllowances(null);
+                    setAllowAsset("hbar");
+                    setAllowAmt("");
+                    void loadAllowances(a.accountId);
+                  }}
+                >
+                  Allowance
                 </button>
                 {a.status === "frozen" ? (
                   <button

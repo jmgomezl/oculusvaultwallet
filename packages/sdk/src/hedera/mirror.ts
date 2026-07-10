@@ -35,6 +35,18 @@ export interface ResolvedAccount {
   balanceTinybar: bigint;
 }
 
+/** One HIP-336 allowance row: what a spender may still draw from an owner.
+ * `tokenId` null = HBAR (amounts in tinybar); otherwise amounts are in the
+ * token's smallest units. */
+export interface AllowanceInfo {
+  spender: string;
+  tokenId: string | null;
+  /** Live remaining cap (decremented by the mirror as it's spent). */
+  remainingRaw: bigint;
+  /** The originally approved cap. */
+  grantedRaw: bigint;
+}
+
 /** On-chain facts about an account that drive agent status displays. */
 export interface AccountFlags {
   accountId: string;
@@ -95,6 +107,46 @@ export class MirrorClient {
       if ((err as { status?: number }).status === 404) return null;
       throw err;
     }
+  }
+
+  /**
+   * HIP-336 allowances an owner has granted, optionally filtered to one
+   * spender. `remainingRaw` is live — the mirror decrements it as the
+   * spender draws down; `grantedRaw` is the original cap. HBAR rows have no
+   * tokenId and are denominated in tinybar; token rows use the token's
+   * smallest units. Fully-consumed allowances (remaining 0) still appear
+   * until re-approved; revoked ones (approve 0) disappear.
+   */
+  async getAllowances(
+    ownerAccountId: string,
+    spenderAccountId?: string,
+  ): Promise<AllowanceInfo[]> {
+    const owner = encodeURIComponent(ownerAccountId);
+    const filter = spenderAccountId
+      ? `?spender.id=${encodeURIComponent(spenderAccountId)}&limit=100`
+      : "?limit=100";
+    const [crypto, tokens] = await Promise.all([
+      this.get<any>(`/api/v1/accounts/${owner}/allowances/crypto${filter}`),
+      this.get<any>(`/api/v1/accounts/${owner}/allowances/tokens${filter}`),
+    ]);
+    const rows: AllowanceInfo[] = [];
+    for (const a of crypto.allowances ?? []) {
+      rows.push({
+        spender: a.spender,
+        tokenId: null,
+        remainingRaw: BigInt(a.amount ?? 0),
+        grantedRaw: BigInt(a.amount_granted ?? 0),
+      });
+    }
+    for (const a of tokens.allowances ?? []) {
+      rows.push({
+        spender: a.spender,
+        tokenId: a.token_id,
+        remainingRaw: BigInt(a.amount ?? 0),
+        grantedRaw: BigInt(a.amount_granted ?? 0),
+      });
+    }
+    return rows;
   }
 
   /** Key structure + deleted flag + balance of an account (null when it

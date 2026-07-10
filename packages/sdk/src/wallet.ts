@@ -26,12 +26,13 @@ import {
   unfreezeAgent as unfreezeAgentTx,
   type CreateAgentAccountResult,
 } from "./hedera/agents.js";
+import { approveAllowance } from "./hedera/allowances.js";
 import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
 import { createTopic, submitTopicMessage, type CreateTopicResult } from "./hedera/consensus.js";
 import { executeContract, type ExecuteContractArgs } from "./hedera/contract.js";
 import { MirrorClient, tinybarToHbar } from "./hedera/mirror.js";
 import { setStaking } from "./hedera/staking.js";
-import { parseTokenAmount } from "./hedera/tokenAmount.js";
+import { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";
 import {
   associateToken,
   createFungibleToken,
@@ -98,6 +99,18 @@ export interface AgentView extends AgentRecord {
    * the account key is currently the owner's key alone. */
   status: "active" | "frozen" | "retired";
   hashscanUrl: string;
+}
+
+/** A display-ready allowance an agent holds on the owner's balance.
+ * `tokenId` null = HBAR. Decimal strings are exact (no floats). */
+export interface AllowanceView {
+  tokenId: string | null;
+  symbol: string;
+  decimals: number;
+  remaining: string;
+  granted: string;
+  remainingRaw: bigint;
+  grantedRaw: bigint;
 }
 
 export interface CreateAgentResult {
@@ -744,6 +757,83 @@ export class OculusVault {
   /** Recent activity of one agent account (public mirror data). */
   async getAgentHistory(agentAccountId: string): Promise<HistoryItem[]> {
     return this.mirror.getHistory(agentAccountId, { limit: 10 });
+  }
+
+  /**
+   * Tier 2: grant an agent a spending cap on THIS wallet's balance
+   * (HIP-336). `asset` is "hbar" or an HTS token id; `amount` is a human
+   * decimal string. The cap replaces any existing one for that agent+asset.
+   */
+  async grantAgentAllowance(
+    agentAccountId: string,
+    asset: "hbar" | string,
+    amount: string | number,
+  ): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) throw new Error("Wallet has no on-ledger account");
+    const base = {
+      network: this.network,
+      ownerAccountId: accountId,
+      ownerPrivateKeyHex: this.privateKeyHex!,
+      spenderAccountId: agentAccountId,
+    };
+    if (asset === "hbar") {
+      return approveAllowance({ ...base, amountHbar: amount });
+    }
+    const info = await this.mirror.getTokenInfo(asset);
+    return approveAllowance({
+      ...base,
+      token: { tokenId: asset, amountRaw: parseTokenAmount(amount, info.decimals) },
+    });
+  }
+
+  /** Revoke = approve 0. Takes effect immediately, network-enforced. */
+  async revokeAgentAllowance(
+    agentAccountId: string,
+    asset: "hbar" | string,
+  ): Promise<SendResult> {
+    return this.grantAgentAllowance(agentAccountId, asset, "0");
+  }
+
+  /** What one agent may still draw from this wallet, display-ready. */
+  async getAgentAllowances(agentAccountId: string): Promise<AllowanceView[]> {
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) return [];
+    const rows = await this.mirror.getAllowances(accountId, agentAccountId);
+    return Promise.all(
+      rows.map(async (r) => {
+        if (r.tokenId == null) {
+          return {
+            tokenId: null,
+            symbol: "ℏ",
+            decimals: 8,
+            remaining: tinybarToHbar(r.remainingRaw),
+            granted: tinybarToHbar(r.grantedRaw),
+            remainingRaw: r.remainingRaw,
+            grantedRaw: r.grantedRaw,
+          } satisfies AllowanceView;
+        }
+        let symbol = r.tokenId;
+        let decimals = 0;
+        try {
+          const info = await this.mirror.getTokenInfo(r.tokenId);
+          symbol = info.symbol || r.tokenId;
+          decimals = info.decimals;
+        } catch {
+          // Metadata lookup failing must not hide the allowance itself.
+        }
+        return {
+          tokenId: r.tokenId,
+          symbol,
+          decimals,
+          remaining: formatTokenAmount(r.remainingRaw, decimals),
+          granted: formatTokenAmount(r.grantedRaw, decimals),
+          remainingRaw: r.remainingRaw,
+          grantedRaw: r.grantedRaw,
+        } satisfies AllowanceView;
+      }),
+    );
   }
 
   /**
