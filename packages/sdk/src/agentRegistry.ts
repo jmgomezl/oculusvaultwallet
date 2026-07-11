@@ -38,6 +38,8 @@ export interface AgentRecord {
   /** Owner's belief about the key state (source of truth is the chain —
    * views should reconcile against the mirror's key structure). */
   frozen: boolean;
+  /** HCS audit topic (agent writes via submit key, owner administers). */
+  auditTopicId?: string;
   /** Set when the account was deleted on-chain; kept for the ledger view. */
   retiredAt?: string;
   createdAt: string;

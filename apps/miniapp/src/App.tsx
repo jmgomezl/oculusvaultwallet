@@ -2359,6 +2359,9 @@ function AgentDeskCard({
   /** Tier 3: pending "ask-me" requests + locally-dismissed schedule ids. */
   const [requests, setRequests] = useState<AgentRequest[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  /** Audit-log panel (agent account id it's open for) + its entries. */
+  const [auditOpen, setAuditOpen] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<TopicMessage[] | null>(null);
   /** Tier 2: per-agent allowance panel (agent account id it's open for). */
   const [allowOpen, setAllowOpen] = useState<string | null>(null);
   const [allowances, setAllowances] = useState<AllowanceView[] | null>(null);
@@ -2398,6 +2401,18 @@ function AgentDeskCard({
     const poll = setInterval(() => void load(), 8000);
     return () => clearInterval(poll);
   }, [accountReady, load, wallet]);
+
+  // Load audit entries whenever the open panel's agent HAS a topic — covers
+  // both the reopen path and the moment right after the topic is created.
+  useEffect(() => {
+    if (!auditOpen || auditEntries != null) return;
+    const a = agents?.find((x) => x.accountId === auditOpen);
+    if (!a?.auditTopicId) return;
+    void wallet
+      .getTopicMessages(a.auditTopicId, 10)
+      .then(setAuditEntries)
+      .catch(() => setAuditEntries([]));
+  }, [auditOpen, auditEntries, agents, wallet]);
 
   // Mirror the active roster into the server's notification watch list so
   // the bot can DM agent activity. Best-effort, no-op in demo mode.
@@ -2507,6 +2522,7 @@ function AgentDeskCard({
         accountId: creds.accountId,
         privateKey: creds.privateKeyHex,
         publicKey: creds.publicKeyHex,
+        ownerAccountId: creds.ownerAccountId,
       },
       null,
       2,
@@ -2516,6 +2532,7 @@ function AgentDeskCard({
       `HEDERA_NETWORK=${creds.network}`,
       `HEDERA_ACCOUNT_ID=${creds.accountId}`,
       `HEDERA_PRIVATE_KEY=${creds.privateKeyHex}`,
+      `HEDERA_OWNER_ACCOUNT_ID=${creds.ownerAccountId}`,
     ].join("\n");
     return (
       <div className="card">
@@ -2662,6 +2679,75 @@ function AgentDeskCard({
                   ✕
                 </button>
               </div>
+            ) : auditOpen === a.accountId ? (
+              <div className="allow-panel">
+                {!a.auditTopicId ? (
+                  <>
+                    <p className="muted xsmall">
+                      Give {a.name} a public, tamper-evident logbook: an HCS
+                      topic only ITS key can write to (you keep the admin
+                      key). Every entry gets a consensus timestamp nobody can
+                      alter — you audit what it says it did.
+                    </p>
+                    <button
+                      className="btn sm"
+                      disabled={busyOn !== ""}
+                      onClick={() =>
+                        act(a.accountId, () => wallet.createAgentAuditTopic(a.accountId),
+                          `Audit log created for ${a.name} — add its topic id to the agent as auditTopicId`)
+                      }
+                    >
+                      {busyOn === a.accountId ? "…" : "Create audit log (small ℏ fee)"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="id-row">
+                      <span className="muted xsmall">Logbook</span>
+                      <button className="chip" onClick={() => copy(a.auditTopicId!, "topic")}>
+                        {copied === "topic" ? "copied ✓" : a.auditTopicId}
+                      </button>
+                      <a
+                        className="chip"
+                        href={`${getNetworkConfig(network).hashscanBase}/topic/${a.auditTopicId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        verify ↗
+                      </a>
+                    </div>
+                    {auditEntries == null ? (
+                      <p className="muted xsmall">Reading the logbook…</p>
+                    ) : auditEntries.length === 0 ? (
+                      <p className="muted xsmall">
+                        No entries yet — the agent writes here itself
+                        (auditTopicId in its credentials).
+                      </p>
+                    ) : (
+                      auditEntries.map((m) => (
+                        <div className="acct-row" key={m.consensusTimestamp}>
+                          <span className="small">
+                            <span className="muted xsmall">
+                              #{m.sequenceNumber} · {new Date(m.timestamp).toLocaleString()}
+                            </span>
+                            <br />
+                            {m.message}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </>
+                )}
+                <button
+                  className="btn ghost sm"
+                  onClick={() => {
+                    setAuditOpen(null);
+                    setAuditEntries(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
             ) : allowOpen === a.accountId ? (
               <div className="allow-panel">
                 {allowances == null ? (
@@ -2783,6 +2869,22 @@ function AgentDeskCard({
                   }}
                 >
                   Allowance
+                </button>
+                <button
+                  className="btn sm"
+                  disabled={busyOn !== ""}
+                  onClick={() => {
+                    setAuditOpen(a.accountId);
+                    setAuditEntries(null);
+                    if (a.auditTopicId) {
+                      void wallet
+                        .getTopicMessages(a.auditTopicId, 10)
+                        .then(setAuditEntries)
+                        .catch(() => setAuditEntries([]));
+                    }
+                  }}
+                >
+                  Audit
                 </button>
                 {a.status === "frozen" ? (
                   <button

@@ -139,6 +139,9 @@ export interface CreateAgentResult {
     accountId: string;
     privateKeyHex: string;
     publicKeyHex: string;
+    /** The hiring wallet's account — agents need it for allowance draws
+     * (Tier 2) and approval requests (Tier 3). */
+    ownerAccountId: string;
   };
   transactionId: string;
   hashscanUrl: string;
@@ -686,6 +689,7 @@ export class OculusVault {
         accountId: created.accountId,
         privateKeyHex: created.agentPrivateKeyHex,
         publicKeyHex: created.agentPublicKeyHex,
+        ownerAccountId: accountId,
       },
       transactionId: created.transactionId,
       hashscanUrl: created.hashscanUrl,
@@ -865,6 +869,35 @@ export class OculusVault {
       }),
     );
     return all.flat();
+  }
+
+  /**
+   * Create an agent's HCS audit topic: the AGENT holds the submit key (it
+   * writes its own log), this wallet holds the admin key. Public and
+   * tamper-evident by construction. Registers the topic id on the record
+   * and returns it — hand it to the agent runtime as `auditTopicId`.
+   */
+  async createAgentAuditTopic(agentAccountId: string): Promise<CreateTopicResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) throw new Error("Wallet has no on-ledger account");
+    const records = await this.loadAgents();
+    const record = records.find(
+      (r) => r.accountId === agentAccountId && r.network === this.network,
+    );
+    if (!record) throw new Error("Unknown agent — it isn't in your registry");
+    if (record.auditTopicId) {
+      throw new Error(`This agent already has an audit log (topic ${record.auditTopicId})`);
+    }
+    const result = await createTopic({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      memo: `oculusvault agent audit: ${record.name}`,
+      submitKeyPublicHex: record.agentPublicKeyHex,
+    });
+    await this.updateAgentRecord(agentAccountId, { auditTopicId: result.topicId });
+    return result;
   }
 
   /** Approve a pending agent request: co-sign its schedule. If this wallet's

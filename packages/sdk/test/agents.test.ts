@@ -211,3 +211,31 @@ test("agent methods are gated on configuration and name validation", async () =>
   await assert.rejects(desk.createAgent("   ", 1), /1–40 characters/);
   await assert.rejects(desk.unfreezeAgent("0.0.9999"), /isn't in your registry/);
 });
+
+test("createAgentAuditTopic guards: unknown agent / already has a logbook", async () => {
+  const agentStorage = new MemoryStorage();
+  const wallet = new OculusVault({
+    network: "testnet",
+    keyProvider: {} as never,
+    fetchImpl: agentMirrorStub as typeof fetch,
+    agentStorage,
+  });
+  await wallet.unlockWithKey(OWNER.privateKeyHex, "42");
+  await agentStorage.setItem(
+    "oculusvault:agents:v1:42",
+    JSON.stringify(
+      encryptAgentRegistry(
+        [
+          { ...AGENTS[0]! },
+          { ...AGENTS[1]!, auditTopicId: "0.0.4242" },
+        ],
+        OWNER.privateKeyHex,
+      ),
+    ),
+  );
+  await assert.rejects(wallet.createAgentAuditTopic("0.0.404"), /isn't in your registry/);
+  await assert.rejects(
+    wallet.createAgentAuditTopic("0.0.9002"),
+    /already has an audit log \(topic 0\.0\.4242\)/,
+  );
+});

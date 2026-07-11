@@ -1,0 +1,33 @@
+{
+  "name": "@oculusvault/agent",
+  "version": "0.1.0",
+  "description": "Headless helper for AI agents managed by OculusVault's Agent Desk — spend petty cash, draw on allowances, request owner approval, write the audit log",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx ./test/*.test.ts"
+  },
+  "keywords": ["hedera", "ai-agent", "wallet", "allowance", "scheduled-transaction", "hcs", "oculusvault"],
+  "dependencies": {
+    "@hashgraph/sdk": "^2.62.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

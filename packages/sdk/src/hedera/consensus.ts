@@ -7,6 +7,7 @@
  */
 import {
   PrivateKey,
+  PublicKey,
   TopicCreateTransaction,
   TopicMessageSubmitTransaction,
   TopicId,
@@ -22,6 +23,10 @@ export interface CreateTopicArgs {
   privateKeyHex: string;
   /** Public memo shown on explorers (e.g. what this notebook is for). */
   memo?: string;
+  /** Who may WRITE to the topic. Defaults to the creating wallet's key;
+   * pass another public key (hex) to delegate writing — e.g. an Agent Desk
+   * audit topic where the AGENT writes and the owner keeps the admin key. */
+  submitKeyPublicHex?: string;
 }
 
 export interface CreateTopicResult extends SendResult {
@@ -39,7 +44,11 @@ export async function createTopic(
   try {
     let tx = new TopicCreateTransaction()
       .setAdminKey(key.publicKey)
-      .setSubmitKey(key.publicKey);
+      .setSubmitKey(
+        args.submitKeyPublicHex
+          ? PublicKey.fromString(args.submitKeyPublicHex)
+          : key.publicKey,
+      );
     if (args.memo) tx = tx.setTopicMemo(args.memo);
     const response = await tx.execute(client);
     const receipt = await response.getReceipt(client);

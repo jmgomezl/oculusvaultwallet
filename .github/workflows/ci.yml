@@ -29,6 +29,9 @@ jobs:
       - name: Test SDK
         run: npm test --workspace @oculusvault/sdk
 
+      - name: Test agent helper
+        run: npm run build --workspace @oculusvault/agent && npm test --workspace @oculusvault/agent
+
       - name: Test server (vault)
         run: npm test --workspace @oculusvault/server
 
