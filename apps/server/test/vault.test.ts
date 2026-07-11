@@ -227,6 +227,24 @@ test("agents slot is independent of the wallet slot", async () => {
   assert.equal(anon.status, 401);
 });
 
+test("agent watch list accepts valid ids, rejects junk, requires auth", async () => {
+  const token = await login(90, OCULUS_TOKEN);
+  const put = (body: unknown, auth = true) =>
+    fetch(`${base}/api/notify/agents`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        ...(auth ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  assert.equal((await put({ accountIds: ["0.0.555", "0.0.556"] })).status, 200);
+  assert.equal((await put({ accountIds: [] })).status, 200); // clears
+  assert.equal((await put({ accountIds: ["not-an-id"] })).status, 400);
+  assert.equal((await put({ accountIds: "0.0.555" })).status, 400);
+  assert.equal((await put({}, false)).status, 401);
+});
+
 test("delete removes the record", async () => {
   const token = await login(42, OCULUS_TOKEN);
   const del = await fetch(`${base}/api/vault`, {

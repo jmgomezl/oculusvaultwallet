@@ -47,6 +47,19 @@ export interface AllowanceInfo {
   grantedRaw: bigint;
 }
 
+/** A pending scheduled transaction awaiting signatures, as the mirror
+ * reports it. `transactionBody` is the base64 SchedulableTransactionBody —
+ * decode with describeScheduledBody() to see what it would do. */
+export interface PendingSchedule {
+  scheduleId: string;
+  creatorAccountId: string;
+  payerAccountId: string;
+  memo?: string;
+  transactionBody: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
 /** On-chain facts about an account that drive agent status displays. */
 export interface AccountFlags {
   accountId: string;
@@ -147,6 +160,42 @@ export class MirrorClient {
       });
     }
     return rows;
+  }
+
+  /**
+   * Scheduled transactions CREATED BY an account that are still pending
+   * (not executed, not deleted, not past expiry). This is the discovery
+   * path for the Agent Desk approvals inbox: agents create schedules; the
+   * owner's wallet lists and co-signs them. Schedules without an explicit
+   * expiration_time expire 30 minutes after creation — we filter those out
+   * client-side since the mirror keeps returning them.
+   */
+  async getPendingSchedules(creatorAccountId: string): Promise<PendingSchedule[]> {
+    const params = new URLSearchParams({
+      "account.id": creatorAccountId,
+      order: "desc",
+      limit: "25",
+    });
+    const data = await this.get<any>(`/api/v1/schedules?${params}`);
+    const now = Date.now() / 1000;
+    const out: PendingSchedule[] = [];
+    for (const s of data.schedules ?? []) {
+      if (s.executed_timestamp != null || s.deleted) continue;
+      const created = Number(s.consensus_timestamp ?? 0);
+      const expiresAtSec =
+        s.expiration_time != null ? Number(s.expiration_time) : created + 1800;
+      if (expiresAtSec <= now) continue;
+      out.push({
+        scheduleId: s.schedule_id,
+        creatorAccountId: s.creator_account_id,
+        payerAccountId: s.payer_account_id,
+        memo: s.memo || undefined,
+        transactionBody: s.transaction_body,
+        createdAt: new Date(Math.floor(created * 1000)).toISOString(),
+        expiresAt: new Date(Math.floor(expiresAtSec * 1000)).toISOString(),
+      });
+    }
+    return out;
   }
 
   /** Key structure + deleted flag + balance of an account (null when it

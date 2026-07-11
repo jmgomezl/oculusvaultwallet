@@ -27,6 +27,7 @@ import {
   type CreateAgentAccountResult,
 } from "./hedera/agents.js";
 import { approveAllowance } from "./hedera/allowances.js";
+import { describeScheduledBody, signSchedule } from "./hedera/schedules.js";
 import { getNetworkConfig, hashscanAccountUrl } from "./hedera/networks.js";
 import { createTopic, submitTopicMessage, type CreateTopicResult } from "./hedera/consensus.js";
 import { executeContract, type ExecuteContractArgs } from "./hedera/contract.js";
@@ -111,6 +112,22 @@ export interface AllowanceView {
   granted: string;
   remainingRaw: bigint;
   grantedRaw: bigint;
+}
+
+/** A pending "ask-me" request from an agent, ready for the consent card.
+ * The summary is derived from the schedule's DECODED BYTES, not its memo. */
+export interface AgentRequest {
+  scheduleId: string;
+  agentName: string;
+  agentAccountId: string;
+  /** Requester-supplied note — display it as a quote, never as the truth. */
+  memo?: string;
+  /** What approving would actually do, e.g. "0.5 ℏ from your balance → 0.0.x". */
+  summary: string;
+  /** True when the scheduled transaction moves funds out of THIS wallet. */
+  involvesOwner: boolean;
+  createdAt: string;
+  expiresAt: string;
 }
 
 export interface CreateAgentResult {
@@ -757,6 +774,111 @@ export class OculusVault {
   /** Recent activity of one agent account (public mirror data). */
   async getAgentHistory(agentAccountId: string): Promise<HistoryItem[]> {
     return this.mirror.getHistory(agentAccountId, { limit: 10 });
+  }
+
+  /** Human line for one movement in a scheduled request. */
+  private async describeMovement(m: {
+    accountId: string;
+    amountRaw: bigint;
+    tokenId?: string;
+  }): Promise<string> {
+    if (!m.tokenId) return `${tinybarToHbar(m.amountRaw)} ℏ`;
+    try {
+      const info = await this.mirror.getTokenInfo(m.tokenId);
+      return `${formatTokenAmount(m.amountRaw, info.decimals)} ${info.symbol || m.tokenId}`;
+    } catch {
+      return `${m.amountRaw} of ${m.tokenId}`;
+    }
+  }
+
+  /**
+   * Tier 3: pending "ask-me" requests across all active agents — scheduled
+   * transactions the agents created that are waiting for this wallet's
+   * signature. The summary shown is decoded from the schedule's bytes.
+   */
+  async getAgentRequests(): Promise<AgentRequest[]> {
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) return [];
+    const agents = (await this.loadAgents()).filter(
+      (r) => r.network === this.network && !r.retiredAt,
+    );
+    const all = await Promise.all(
+      agents.map(async (agent) => {
+        let pending;
+        try {
+          pending = await this.mirror.getPendingSchedules(agent.accountId);
+        } catch {
+          return []; // transient mirror failure must not hide other agents
+        }
+        return Promise.all(
+          pending.map(async (p) => {
+            let summary = "an operation this wallet can't itemise";
+            let involvesOwner = false;
+            try {
+              const desc = describeScheduledBody(p.transactionBody);
+              if (desc.kind === "transfer") {
+                const fromOwner = desc.movements.filter(
+                  (m) => m.accountId === accountId && m.amountRaw < 0n,
+                );
+                involvesOwner = fromOwner.length > 0;
+                if (involvesOwner) {
+                  const recipients = desc.movements.filter(
+                    (m) => m.amountRaw > 0n && m.accountId !== accountId,
+                  );
+                  const what = (
+                    await Promise.all(
+                      fromOwner.map((m) =>
+                        this.describeMovement({ ...m, amountRaw: -m.amountRaw }),
+                      ),
+                    )
+                  ).join(" + ");
+                  const to = recipients.map((r) => r.accountId).join(", ") || "?";
+                  summary = `${what} from your balance → ${to}`;
+                } else {
+                  const parts = await Promise.all(
+                    desc.movements
+                      .filter((m) => m.amountRaw < 0n)
+                      .map(async (m) =>
+                        `${await this.describeMovement({ ...m, amountRaw: -m.amountRaw })} from ${m.accountId}`,
+                      ),
+                  );
+                  summary = parts.join("; ") || "a transfer not touching your balance";
+                }
+              } else {
+                summary = `a non-transfer operation (${desc.operation ?? "unknown"})`;
+              }
+            } catch {
+              // Undecodable bytes stay visibly undecodable — never guess.
+            }
+            return {
+              scheduleId: p.scheduleId,
+              agentName: agent.name,
+              agentAccountId: agent.accountId,
+              memo: p.memo,
+              summary,
+              involvesOwner,
+              createdAt: p.createdAt,
+              expiresAt: p.expiresAt,
+            } satisfies AgentRequest;
+          }),
+        );
+      }),
+    );
+    return all.flat();
+  }
+
+  /** Approve a pending agent request: co-sign its schedule. If this wallet's
+   * signature completes the requirements, it executes immediately. */
+  async approveAgentRequest(scheduleId: string): Promise<SendResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) throw new Error("Wallet has no on-ledger account");
+    return signSchedule({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      scheduleId,
+    });
   }
 
   /**

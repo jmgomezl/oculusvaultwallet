@@ -12,6 +12,7 @@ export type {
   UnlockArgs,
   OnIncomingOptions,
   AgentView,
+  AgentRequest,
   AllowanceView,
   CreateAgentResult,
 } from "./wallet.js";
@@ -120,6 +121,14 @@ export {
   approveAllowance,
   type ApproveAllowanceArgs,
 } from "./hedera/allowances.js";
+export {
+  signSchedule,
+  describeScheduledBody,
+  type SignScheduleArgs,
+  type ScheduledSummary,
+  type ScheduledMovement,
+} from "./hedera/schedules.js";
+export type { PendingSchedule } from "./hedera/mirror.js";
 export { sendHbar, type SendArgs } from "./hedera/transfer.js";
 export {
   sendToken,

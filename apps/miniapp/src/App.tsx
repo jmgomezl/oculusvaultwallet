@@ -24,6 +24,7 @@ import {
   isPasskeyPrfLikelySupported,
   createPasskeyQuickUnlock,
   unlockWithPasskeyQuickUnlock,
+  type AgentRequest,
   type AgentView,
   type AllowanceView,
   type CreateAgentResult,
@@ -35,7 +36,7 @@ import {
   type TopicRef,
 } from "@oculusvault/sdk";
 import { getNetworkConfig } from "@oculusvault/sdk";
-import { authenticate, isDemoMode, type AuthResult } from "./api.js";
+import { authenticate, isDemoMode, syncAgentWatchList, type AuthResult } from "./api.js";
 import { WcBridge, type WcProposal, type WcRequest, type WcSession } from "./wcBridge.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
@@ -2355,6 +2356,9 @@ function AgentDeskCard({
   const [fundOpen, setFundOpen] = useState<string | null>(null);
   const [fundAmt, setFundAmt] = useState("");
   const [confirmRetire, setConfirmRetire] = useState<string | null>(null);
+  /** Tier 3: pending "ask-me" requests + locally-dismissed schedule ids. */
+  const [requests, setRequests] = useState<AgentRequest[]>([]);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   /** Tier 2: per-agent allowance panel (agent account id it's open for). */
   const [allowOpen, setAllowOpen] = useState<string | null>(null);
   const [allowances, setAllowances] = useState<AllowanceView[] | null>(null);
@@ -2378,6 +2382,11 @@ function AgentDeskCard({
     } catch {
       /* transient mirror/vault failure — keep whatever we have */
     }
+    try {
+      setRequests(await wallet.getAgentRequests());
+    } catch {
+      /* same */
+    }
   }, [wallet]);
 
   // Keep the roster live: the mirror lags consensus by a few seconds, so a
@@ -2389,6 +2398,15 @@ function AgentDeskCard({
     const poll = setInterval(() => void load(), 8000);
     return () => clearInterval(poll);
   }, [accountReady, load, wallet]);
+
+  // Mirror the active roster into the server's notification watch list so
+  // the bot can DM agent activity. Best-effort, no-op in demo mode.
+  useEffect(() => {
+    if (agents == null) return;
+    void syncAgentWatchList(
+      agents.filter((a) => a.status !== "retired").map((a) => a.accountId),
+    );
+  }, [agents]);
 
   const copy = (text: string, tag: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -2557,6 +2575,48 @@ function AgentDeskCard({
         protocol level: freeze it, sweep the funds home, or retire it at any
         time — no cooperation from the agent needed.
       </p>
+
+      {requests
+        .filter((r) => !dismissed.has(r.scheduleId))
+        .map((r) => (
+          <div className="agent-request" key={r.scheduleId}>
+            <p className="small">
+              🔔 <strong>{r.agentName}</strong> requests{" "}
+              <strong>{r.summary}</strong>
+            </p>
+            {r.memo && (
+              <p className="muted xsmall">
+                Agent's note: “{r.memo}” — the amounts above are decoded from
+                the transaction itself.
+              </p>
+            )}
+            <p className="muted xsmall">
+              Expires {new Date(r.expiresAt).toLocaleTimeString()}. Ignoring it
+              means it never runs.
+            </p>
+            <div className="req-actions">
+              <button
+                className="btn primary"
+                disabled={busyOn !== ""}
+                onClick={() =>
+                  act(r.agentAccountId, () => wallet.approveAgentRequest(r.scheduleId),
+                    `Approved ${r.agentName}'s request`)
+                }
+              >
+                {busyOn === r.agentAccountId ? "…" : "Approve & sign"}
+              </button>
+              <button
+                className="btn ghost"
+                disabled={busyOn !== ""}
+                onClick={() =>
+                  setDismissed((s) => new Set(s).add(r.scheduleId))
+                }
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ))}
 
       {agents == null ? (
         <p className="muted xsmall">Opening the ledger…</p>

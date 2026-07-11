@@ -64,6 +64,28 @@ export async function authenticate(): Promise<AuthResult> {
   return result;
 }
 
+/**
+ * Keep the server's agent-notification watch list in step with the roster
+ * (Agent Desk). Best-effort and real-session only: in demo mode there is no
+ * bot to DM. Account ids are public on-chain data.
+ */
+export async function syncAgentWatchList(accountIds: string[]): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  try {
+    await fetch(`${API_BASE}/api/notify/agents`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ accountIds }),
+    });
+  } catch {
+    // Notifications are a convenience — never let this break the desk.
+  }
+}
+
 /** Stable per-browser id so the demo wallet survives page reloads. */
 function browserId(): string {
   const k = "oculusvault:devBrowserId";

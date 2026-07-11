@@ -8,7 +8,8 @@ import { VaultStore } from "./vaultStore.js";
 
 assertProdSafety();
 const vault = new VaultStore(config.vaultDataDir);
-createApp({ vault }).listen(config.port, () => {
+const agentWatch = new VaultStore(config.vaultDataDir, "agent-watch.json");
+createApp({ vault, agentWatch }).listen(config.port, () => {
   console.log(
     `oculusvault server on :${config.port} (network=${config.network}, apps=${Object.keys(
       config.botTokens,
@@ -19,6 +20,7 @@ createApp({ vault }).listen(config.port, () => {
 if (config.notifyEnabled && config.botToken !== "PLACEHOLDER_BOT_TOKEN") {
   createNotifier({
     vault,
+    agentWatch,
     mirror: new MirrorClient(getNetworkConfig(config.network)),
     botToken: config.botToken,
     cursorFile: join(config.vaultDataDir, "notify-cursors.json"),

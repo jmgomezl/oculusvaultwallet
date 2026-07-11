@@ -21,6 +21,10 @@ import type { VaultStore } from "./vaultStore.js";
 
 export interface NotifierDeps {
   vault: Pick<VaultStore, "entries">;
+  /** Opt-in Agent Desk watch list: uid → JSON array of agent account ids.
+   * When present, agent activity (spends, refills, approval requests) is
+   * DMed to the owner too. */
+  agentWatch?: Pick<VaultStore, "entries">;
   mirror: MirrorClient;
   botToken: string;
   /** Where cursors persist across restarts. */
@@ -33,10 +37,13 @@ interface UserCursor {
   accountId?: string;
   /** Consensus timestamp of the last item seen (notify only after this). */
   cursor?: string;
+  /** Schedule ids already announced (approval requests), capped. */
+  schedSeen?: string[];
 }
 
 function formatAmount(item: { amount: string; token?: { symbol: string } }): string {
-  const clean = item.amount.replace(/^\+/, "").replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  // Sign is carried by the message's verb ("received"/"spent"), not the number.
+  const clean = item.amount.replace(/^[+-]/, "").replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
   return item.token ? `${clean} ${item.token.symbol}` : `${clean} ℏ`;
 }
 
@@ -130,6 +137,67 @@ export function createNotifier(deps: NotifierDeps) {
         }
       } catch {
         // Transient mirror failure for this user — next cycle retries.
+      }
+    }
+
+    // Agent Desk: watched agent accounts. Any movement on an agent account
+    // is worth a DM — the whole point of the desk is knowing what the agent
+    // does with its budget. Plus new pending approval requests it creates.
+    for (const [uid, entry] of deps.agentWatch?.entries() ?? []) {
+      let agentIds: string[];
+      try {
+        agentIds = JSON.parse(entry.record);
+        if (!Array.isArray(agentIds)) continue;
+      } catch {
+        continue;
+      }
+      for (const agentId of agentIds) {
+        try {
+          const state = (cursors[`agent:${uid}:${agentId}`] ??= {});
+          if (state.cursor === undefined) {
+            const latest = await deps.mirror.getHistory(agentId, {
+              limit: 1,
+              order: "desc",
+            });
+            state.cursor = latest[0]?.consensusTimestamp ?? "0";
+            dirty = true;
+          } else {
+            const items = await deps.mirror.getHistory(agentId, {
+              order: "asc",
+              timestampGt: state.cursor,
+              limit: 25,
+            });
+            for (const item of items) {
+              state.cursor = item.consensusTimestamp;
+              dirty = true;
+              const verb = item.direction === "out" ? "spent" : "received";
+              await sendMessage(
+                uid,
+                `🤖 Agent account <code>${agentId}</code> ${verb} <b>${formatAmount(item)}</b>${
+                  item.counterparty ? ` ${item.direction === "out" ? "→" : "←"} <code>${item.counterparty}</code>` : ""
+                }\n<a href="${item.hashscanUrl}">View on Hashscan</a>`,
+              );
+            }
+          }
+
+          // New approval requests (pending schedules created by the agent).
+          const pending = await deps.mirror.getPendingSchedules(agentId);
+          const seen = new Set(state.schedSeen ?? []);
+          for (const p of pending) {
+            if (seen.has(p.scheduleId)) continue;
+            seen.add(p.scheduleId);
+            dirty = true;
+            await sendMessage(
+              uid,
+              `🔔 Agent account <code>${agentId}</code> is asking you to approve a transaction${
+                p.memo ? ` — “${p.memo}”` : ""
+              }.\nOpen OculusVault → Agent Desk to review it before it expires.`,
+            );
+          }
+          state.schedSeen = [...seen].slice(-50);
+        } catch {
+          // Transient mirror failure for this agent — next cycle retries.
+        }
       }
     }
     if (dirty) flush();

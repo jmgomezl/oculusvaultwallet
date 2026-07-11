@@ -43,6 +43,9 @@ export interface AppDeps {
   vault?: VaultStore;
   /** Store for the encrypted Agent Desk registry ("agents" vault slot). */
   agentsVault?: VaultStore;
+  /** Opt-in agent-account watch list feeding the notifier (plaintext account
+   * ids — public on-chain data, same posture as the wallet notifier). */
+  agentWatch?: VaultStore;
 }
 
 /** Minimal in-memory per-IP rate limiter (fixed window). Dependency-free so
@@ -255,6 +258,34 @@ export function createApp(deps: AppDeps = {}): Express {
   };
   registerVaultSlot("/api/vault", vault);
   registerVaultSlot("/api/vault/agents", agentsVault);
+
+  // Opt-in notifier watch list: which agent ACCOUNT IDS to watch for this
+  // user. Account ids are public on-chain data; what's stored is only the
+  // uid→accounts association the user explicitly asked to be notified about
+  // (the encrypted registry itself stays unreadable to the server).
+  const agentWatch =
+    deps.agentWatch ?? new VaultStore(config.vaultDataDir, "agent-watch.json");
+  app.put(
+    "/api/notify/agents",
+    vaultLimiter,
+    requireSession,
+    (req: Authed, res: Response) => {
+      const ids: unknown = req.body?.accountIds;
+      if (
+        !Array.isArray(ids) ||
+        ids.length > 50 ||
+        !ids.every((x) => typeof x === "string" && /^0\.0\.\d{1,12}$/.test(x))
+      ) {
+        return res.status(400).json({ error: "bad_account_ids" });
+      }
+      if (ids.length === 0) {
+        agentWatch.delete(req.session!.uid);
+      } else {
+        agentWatch.put(req.session!.uid, JSON.stringify(ids), new Date(now()).toISOString());
+      }
+      res.json({ ok: true, watching: ids.length });
+    },
+  );
 
   // --- Mirror Node read proxy ---
   app.get("/api/balance/:acct", async (req: Request, res: Response) => {
