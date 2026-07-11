@@ -14,7 +14,7 @@ import {
   Wallet as HederaWeb3Wallet,
 } from "@hashgraph/hedera-wallet-connect";
 import { getSdkError } from "@walletconnect/utils";
-import { Query, Transaction } from "@hashgraph/sdk";
+import { PrivateKey, Query, Transaction } from "@hashgraph/sdk";
 import {
   describeTransaction,
   type HederaNetwork,
@@ -157,10 +157,20 @@ export class WcBridge {
           if (!accountId) throw new Error("No account to sign with.");
           // The key stays in OculusVault memory; a signer is built only for
           // the duration of this single approved request.
+          //
+          // getHederaWallet() feeds the key straight into @hashgraph/sdk's
+          // Wallet ctor, which runs PrivateKey.fromString() on a raw hex
+          // string — and THAT DEFAULTS TO ED25519. Our accounts are secp256k1
+          // (ECDSA), so a raw-hex key is parsed as the wrong curve and every
+          // signature fails on-ledger precheck with INVALID_SIGNATURE. Hand it
+          // a DER-encoded ECDSA key: the ctor detects DER and keeps the curve.
+          const ecdsaDerKey = PrivateKey.fromStringECDSA(
+            await opts.wallet.exportKey(),
+          ).toStringDer();
           const signer = wc.getHederaWallet(
             parsed.chainId,
             accountId,
-            await opts.wallet.exportKey(),
+            ecdsaDerKey,
           );
           await wc.executeSessionRequest(event, signer);
         },
