@@ -155,6 +155,7 @@ export {
   type SubmitTopicMessageArgs,
 } from "./hedera/consensus.js";
 export { describeTransaction } from "./hedera/describe.js";
+export { toEcdsaDerKey } from "./hedera/signerKey.js";
 export {
   EVM_CHAIN_IDS,
   hbarToWeibar,

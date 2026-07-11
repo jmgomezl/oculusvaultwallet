@@ -14,9 +14,10 @@ import {
   Wallet as HederaWeb3Wallet,
 } from "@hashgraph/hedera-wallet-connect";
 import { getSdkError } from "@walletconnect/utils";
-import { PrivateKey, Query, Transaction } from "@hashgraph/sdk";
+import { Query, Transaction } from "@hashgraph/sdk";
 import {
   describeTransaction,
+  toEcdsaDerKey,
   type HederaNetwork,
   type OculusVault,
 } from "@oculusvault/sdk";
@@ -164,13 +165,11 @@ export class WcBridge {
           // (ECDSA), so a raw-hex key is parsed as the wrong curve and every
           // signature fails on-ledger precheck with INVALID_SIGNATURE. Hand it
           // a DER-encoded ECDSA key: the ctor detects DER and keeps the curve.
-          const ecdsaDerKey = PrivateKey.fromStringECDSA(
-            await opts.wallet.exportKey(),
-          ).toStringDer();
+          // (toEcdsaDerKey is unit-tested in the SDK — see signerKey.test.ts.)
           const signer = wc.getHederaWallet(
             parsed.chainId,
             accountId,
-            ecdsaDerKey,
+            toEcdsaDerKey(await opts.wallet.exportKey()),
           );
           await wc.executeSessionRequest(event, signer);
         },
