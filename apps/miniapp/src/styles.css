@@ -384,6 +384,15 @@ a.chip {
   border-color: var(--red);
   color: var(--red);
 }
+.nft-thumb {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 2px 2px 0 rgba(28, 26, 20, 0.12);
+  flex-shrink: 0;
+}
 .agent-request {
   display: flex;
   flex-direction: column;

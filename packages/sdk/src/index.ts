@@ -135,6 +135,8 @@ export {
   sendNft,
   associateToken,
   createFungibleToken,
+  createNftCollection,
+  mintNft,
   USDC_TOKEN_IDS,
   SUGGESTED_TOKENS,
   type KnownToken,
@@ -143,6 +145,9 @@ export {
   type AssociateTokenArgs,
   type CreateFungibleTokenArgs,
   type CreateTokenResult,
+  type CreateNftCollectionArgs,
+  type MintNftArgs,
+  type MintNftResult,
 } from "./hedera/tokens.js";
 export { executeContract, type ExecuteContractArgs } from "./hedera/contract.js";
 export { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";

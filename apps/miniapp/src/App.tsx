@@ -1072,11 +1072,17 @@ function Dashboard({
           onChanged={refresh}
         />
       </Drawer>
-      {nfts.length > 0 && (
-        <Drawer title="Collectibles" sum={`${nfts.length} item${nfts.length === 1 ? "" : "s"}`}>
-          <NftCard nfts={nfts} wallet={wallet} onChanged={refresh} />
-        </Drawer>
-      )}
+      <Drawer
+        title="Collectibles"
+        sum={nfts.length > 0 ? `${nfts.length} item${nfts.length === 1 ? "" : "s"}` : "mint & hold NFTs"}
+      >
+        <NftCard
+          nfts={nfts}
+          wallet={wallet}
+          accountReady={identity.hederaAccountId != null}
+          onChanged={refresh}
+        />
+      </Drawer>
       <Drawer title="Staking" sum="earn on your balance">
         <StakeCard
           wallet={wallet}
@@ -1608,16 +1614,51 @@ function TokensCard({
 function NftCard({
   nfts,
   wallet,
+  accountReady,
   onChanged,
 }: {
   nfts: NftItem[];
   wallet: OculusVault;
+  accountReady: boolean;
   onChanged: () => void;
 }) {
   const [sending, setSending] = useState<NftItem | null>(null);
   const [to, setTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+  /** Mint flow: new collection fields + optional existing-collection id. */
+  const [minting, setMinting] = useState(false);
+  const [mName, setMName] = useState("");
+  const [mSymbol, setMSymbol] = useState("");
+  const [mUri, setMUri] = useState("");
+  const [mExisting, setMExisting] = useState("");
+
+  const mint = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      let collectionId = mExisting.trim();
+      if (!collectionId) {
+        const c = await wallet.createNftCollection({ name: mName, symbol: mSymbol });
+        collectionId = c.tokenId;
+      }
+      const r = await wallet.mintNft(collectionId, mUri.trim());
+      haptic("success");
+      setMsg({
+        ok: true,
+        text: `Minted ${collectionId} #${r.serials.join(", #")} · ${r.status}`,
+        url: r.hashscanUrl,
+      });
+      setMinting(false);
+      setMName(""); setMSymbol(""); setMUri(""); setMExisting("");
+      onChanged();
+    } catch (e) {
+      haptic("error");
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const validTo = /^0x[0-9a-fA-F]{40}$/.test(to.trim()) || /^0\.0\.[0-9]+$/.test(to.trim());
 
@@ -1647,9 +1688,29 @@ function NftCard({
   return (
     <div className="card">
       <h3>Collectibles</h3>
+      {nfts.length === 0 && (
+        <p className="muted small">
+          No collectibles yet — receive one, or mint your own below. Each
+          piece is a unique on-chain token with its artwork referenced by an
+          unchangeable metadata link.
+        </p>
+      )}
       {nfts.map((n) => (
         <div className="row" key={`${n.tokenId}/${n.serialNumber}`}>
-          <span className="row-glyph in">✦</span>
+          {n.imageUrl ? (
+            <img
+              className="nft-thumb"
+              src={n.imageUrl}
+              alt={`${n.name} #${n.serialNumber}`}
+              loading="lazy"
+              onError={(e) => {
+                // A dead gateway shouldn't leave a broken-image icon.
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <span className="row-glyph in">✦</span>
+          )}
           <span>
             <strong>{n.name}</strong>{" "}
             <span className="muted xsmall">
@@ -1691,6 +1752,68 @@ function NftCard({
             {busy ? "Sending…" : `Send #${sending.serialNumber} — final`}
           </button>
           <button className="btn ghost" disabled={busy} onClick={() => setSending(null)}>
+            Cancel
+          </button>
+        </>
+      )}
+      {!sending && !minting && (
+        <button
+          className="btn"
+          disabled={busy || !accountReady}
+          onClick={() => { setMsg(null); setMinting(true); }}
+        >
+          Mint a collectible
+        </button>
+      )}
+      {!accountReady && (
+        <p className="muted xsmall">
+          <span className="pending-stamp">Pending</span> Minting unlocks once
+          your account exists — receive any HBAR first.
+        </p>
+      )}
+      {minting && (
+        <>
+          <p className="muted small">
+            Point at your artwork: a link to an image (or a HIP-412 metadata
+            JSON) — <code>ipfs://…</code> or <code>https://…</code>, max 100
+            characters. The link is stamped on-chain forever; the piece lands
+            in this wallet.
+          </p>
+          <input
+            className="input mono"
+            placeholder="Artwork link (ipfs://… or https://…)"
+            value={mUri}
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setMUri(e.target.value)}
+          />
+          {!mExisting && (
+            <div className="input-row">
+              <input className="input" placeholder="Collection name (e.g. Postcards)"
+                     value={mName} onChange={(e) => setMName(e.target.value)} />
+              <input className="input" placeholder="Symbol" style={{ maxWidth: 100 }}
+                     value={mSymbol} onChange={(e) => setMSymbol(e.target.value)} />
+            </div>
+          )}
+          <input
+            className="input"
+            placeholder="…or mint into a collection you created (0.0.…)"
+            value={mExisting}
+            onChange={(e) => setMExisting(e.target.value)}
+          />
+          <button
+            className="btn primary"
+            disabled={busy || !mUri.trim() || (!mExisting.trim() && (!mName.trim() || !mSymbol.trim()))}
+            onClick={mint}
+          >
+            {busy
+              ? "Minting…"
+              : mExisting.trim()
+                ? "Mint into collection (~$0.05 in ℏ)"
+                : "Create collection & mint (~$1 in ℏ)"}
+          </button>
+          <button className="btn ghost" disabled={busy} onClick={() => setMinting(false)}>
             Cancel
           </button>
         </>

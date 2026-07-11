@@ -21,6 +21,11 @@ import { hashscanTxUrl, type NetworkConfig } from "./networks.js";
 
 const TINYBAR_PER_HBAR = 100_000_000n;
 
+/** ipfs://CID[/path] → a public https gateway URL; https URLs pass through. */
+export function ipfsToHttps(uri: string): string {
+  return uri.replace(/^ipfs:\/\//i, "https://ipfs.io/ipfs/");
+}
+
 export function tinybarToHbar(tinybar: bigint): string {
   const neg = tinybar < 0n;
   const abs = neg ? -tinybar : tinybar;
@@ -377,7 +382,8 @@ export class MirrorClient {
     });
   }
 
-  /** NFTs the account holds, joined with collection metadata. */
+  /** NFTs the account holds, joined with collection metadata and (best
+   * effort) a displayable image resolved from the serial's metadata. */
   async getNfts(accountId: string): Promise<NftItem[]> {
     const data = await this.get<any>(
       `/api/v1/accounts/${encodeURIComponent(accountId)}/nfts?limit=50`,
@@ -386,6 +392,7 @@ export class MirrorClient {
       token_id: string;
       serial_number: number;
       deleted?: boolean;
+      metadata?: string;
     }> = data.nfts ?? [];
     const items = await Promise.all(
       rows
@@ -400,16 +407,74 @@ export class MirrorClient {
           } catch {
             // Collection metadata failing must not hide the NFT itself.
           }
+          const { metadataUri, imageUrl } = await this.resolveNftImage(
+            n.token_id,
+            n.serial_number,
+            n.metadata,
+          );
           return {
             tokenId: n.token_id,
             serialNumber: n.serial_number,
             name,
             symbol,
             hashscanUrl: `${this.cfg.hashscanBase}/token/${n.token_id}/${n.serial_number}`,
+            metadataUri,
+            imageUrl,
           } satisfies NftItem;
         }),
     );
     return items;
+  }
+
+  /** serial-metadata resolution cache (token/serial → resolved fields). */
+  private nftImageCache = new Map<string, { metadataUri?: string; imageUrl?: string }>();
+
+  /**
+   * Best-effort image resolution for one serial. The on-chain metadata
+   * (≤100 bytes) is conventionally a URI: either directly to an image, or
+   * to a HIP-412 JSON whose `image` field points at one. ipfs:// goes
+   * through a public gateway. Every failure degrades to text-only display.
+   */
+  private async resolveNftImage(
+    tokenId: string,
+    serial: number,
+    metadataBase64: string | undefined,
+  ): Promise<{ metadataUri?: string; imageUrl?: string }> {
+    const cacheKey = `${tokenId}/${serial}`;
+    const cached = this.nftImageCache.get(cacheKey);
+    if (cached) return cached;
+
+    const out: { metadataUri?: string; imageUrl?: string } = {};
+    try {
+      if (metadataBase64) {
+        const uri = new TextDecoder()
+          .decode(base64urlToBytes(metadataBase64))
+          .trim();
+        if (/^(ipfs:\/\/|https?:\/\/)/i.test(uri)) {
+          out.metadataUri = uri;
+          const gatewayed = ipfsToHttps(uri);
+          if (/\.(png|jpe?g|gif|webp|svg|avif)(\?|$)/i.test(gatewayed)) {
+            out.imageUrl = gatewayed;
+          } else {
+            // Assume HIP-412 JSON; a non-JSON response just leaves text-only.
+            const res = await this.fetchImpl(gatewayed, {
+              headers: { accept: "application/json" },
+            });
+            if (res.ok) {
+              const json: any = await res.json();
+              const image = json?.image ?? json?.pic ?? json?.picture;
+              if (typeof image === "string" && image) {
+                out.imageUrl = ipfsToHttps(image);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Unreachable gateways / malformed metadata → text-only row.
+    }
+    this.nftImageCache.set(cacheKey, out);
+    return out;
   }
 
   /**

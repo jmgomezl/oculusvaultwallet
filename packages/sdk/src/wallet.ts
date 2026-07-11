@@ -37,9 +37,12 @@ import { formatTokenAmount, parseTokenAmount } from "./hedera/tokenAmount.js";
 import {
   associateToken,
   createFungibleToken,
+  createNftCollection,
+  mintNft,
   sendNft,
   sendToken,
   type CreateTokenResult,
+  type MintNftResult,
 } from "./hedera/tokens.js";
 import { sendHbar } from "./hedera/transfer.js";
 import type { KeyProvider } from "./keyprovider/KeyProvider.js";
@@ -450,6 +453,45 @@ export class OculusVault {
       accountId,
       privateKeyHex: this.privateKeyHex!,
       ...args,
+    });
+  }
+
+  /** Create a non-fungible collection with this wallet as treasury/minter. */
+  async createNftCollection(args: {
+    name: string;
+    symbol: string;
+  }): Promise<CreateTokenResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return createNftCollection({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      ...args,
+    });
+  }
+
+  /** Mint one serial (metadata = ipfs/https URI, ≤100 bytes) into a
+   * collection this wallet created. The piece lands in this wallet. */
+  async mintNft(tokenId: string, metadataUri: string): Promise<MintNftResult> {
+    this.requireUnlocked();
+    const accountId = this.accountId ?? (await this.refreshAccountId());
+    if (!accountId) {
+      throw new Error(
+        "This wallet has no on-ledger account yet — receive HBAR first to auto-create it",
+      );
+    }
+    return mintNft({
+      network: this.network,
+      accountId,
+      privateKeyHex: this.privateKeyHex!,
+      tokenId,
+      metadataUri,
     });
   }
 

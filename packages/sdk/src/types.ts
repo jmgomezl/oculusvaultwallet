@@ -111,6 +111,12 @@ export interface NftItem {
   symbol: string;
   /** Hashscan page for this exact serial. */
   hashscanUrl: string;
+  /** The serial's on-chain metadata decoded to text (usually a URI). */
+  metadataUri?: string;
+  /** Displayable https image URL resolved from the metadata (HIP-412
+   * `image` field, or the metadata itself when it points at an image).
+   * Absent when resolution fails — display falls back to text. */
+  imageUrl?: string;
 }
 
 /** An HTS token the account holds (is associated with). */

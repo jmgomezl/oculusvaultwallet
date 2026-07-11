@@ -236,6 +236,8 @@ test("getNfts joins collection metadata and drops deleted serials", async () => 
       name: "Hedera Monkeys",
       symbol: "HMONK",
       hashscanUrl: "https://hashscan.io/testnet/token/0.0.555/7",
+      metadataUri: undefined,
+      imageUrl: undefined,
     },
   ]);
 });

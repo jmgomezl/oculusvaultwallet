@@ -19,6 +19,9 @@ import {
   TokenAssociateTransaction,
   TokenCreateTransaction,
   TokenId,
+  TokenMintTransaction,
+  TokenSupplyType,
+  TokenType,
   TransferTransaction,
 } from "@hashgraph/sdk";
 import type { HederaNetwork, SendResult } from "../types.js";
@@ -47,6 +50,12 @@ function friendlyTokenError(err: unknown): Error {
   }
   if (/SENDER_DOES_NOT_OWN_NFT_SERIAL_NO|INVALID_NFT_ID/.test(msg)) {
     return new Error("This wallet doesn’t own that NFT serial.");
+  }
+  if (/TOKEN_HAS_NO_SUPPLY_KEY|INVALID_SUPPLY_KEY|INVALID_SIGNATURE.*mint/i.test(msg)) {
+    return new Error("Only the collection's creator (supply-key holder) can mint into it.");
+  }
+  if (/INVALID_TOKEN_ID/.test(msg)) {
+    return new Error("That token id doesn't exist on this network.");
   }
   return err instanceof Error ? err : new Error(msg);
 }
@@ -150,6 +159,117 @@ export async function createFungibleToken(
     const transactionId = response.transactionId.toString();
     return {
       tokenId: receipt.tokenId.toString(),
+      transactionId,
+      hashscanUrl: hashscanTxUrl(cfg, transactionId),
+      status: receipt.status.toString(),
+    };
+  } catch (err) {
+    throw friendlyTokenError(err);
+  } finally {
+    client.close();
+  }
+}
+
+export interface CreateNftCollectionArgs {
+  network: HederaNetwork;
+  accountId: string;
+  privateKeyHex: string;
+  /** Collection name, e.g. "Engraved Postcards". */
+  name: string;
+  /** 1–10 letters/digits, e.g. "CARD". */
+  symbol: string;
+}
+
+/**
+ * Create a non-fungible collection with this wallet as treasury. Admin +
+ * supply keys are the wallet's key: the creator mints serials (mintNft) and
+ * keeps control; anyone can hold them via normal association / HIP-904
+ * auto-association.
+ */
+export async function createNftCollection(
+  args: CreateNftCollectionArgs,
+): Promise<CreateTokenResult> {
+  const name = args.name.trim();
+  const symbol = args.symbol.trim().toUpperCase();
+  if (!name || name.length > 100) throw new Error("Collection name: 1–100 characters");
+  if (!/^[A-Z0-9]{1,10}$/.test(symbol)) {
+    throw new Error("Symbol: 1–10 letters/digits");
+  }
+  const cfg = getNetworkConfig(args.network);
+  const client = clientFor(args.network);
+  const key = PrivateKey.fromStringECDSA(args.privateKeyHex);
+  const treasury = AccountId.fromString(args.accountId);
+  client.setOperator(treasury, key);
+
+  try {
+    const response = await new TokenCreateTransaction()
+      .setTokenName(name)
+      .setTokenSymbol(symbol)
+      .setTokenType(TokenType.NonFungibleUnique)
+      .setSupplyType(TokenSupplyType.Infinite)
+      .setTreasuryAccountId(treasury)
+      .setAdminKey(key.publicKey)
+      .setSupplyKey(key.publicKey)
+      .execute(client);
+    const receipt = await response.getReceipt(client);
+    if (!receipt.tokenId) throw new Error("Network returned no token id");
+    const transactionId = response.transactionId.toString();
+    return {
+      tokenId: receipt.tokenId.toString(),
+      transactionId,
+      hashscanUrl: hashscanTxUrl(cfg, transactionId),
+      status: receipt.status.toString(),
+    };
+  } catch (err) {
+    throw friendlyTokenError(err);
+  } finally {
+    client.close();
+  }
+}
+
+export interface MintNftArgs {
+  network: HederaNetwork;
+  accountId: string;
+  privateKeyHex: string;
+  /** A collection this wallet holds the supply key for. */
+  tokenId: string;
+  /** Serial metadata — conventionally a URI (ipfs://… or https://…) to an
+   * image or HIP-412 JSON. HARD on-chain limit: 100 BYTES. */
+  metadataUri: string;
+}
+
+export interface MintNftResult extends SendResult {
+  /** Serial number(s) minted by this call. */
+  serials: number[];
+}
+
+/** Mint one serial into a collection this wallet controls. The metadata is
+ * what wallets/marketplaces resolve to display the piece — keep it a URI. */
+export async function mintNft(args: MintNftArgs): Promise<MintNftResult> {
+  const uri = args.metadataUri.trim();
+  if (!/^(ipfs:\/\/|https?:\/\/)/i.test(uri)) {
+    throw new Error("Metadata must be an ipfs:// or https:// URI");
+  }
+  const bytes = new TextEncoder().encode(uri);
+  if (bytes.length > 100) {
+    throw new Error(
+      `Metadata URI is ${bytes.length} bytes — the network caps it at 100. Use an ipfs:// CID or a short URL.`,
+    );
+  }
+  const cfg = getNetworkConfig(args.network);
+  const client = clientFor(args.network);
+  const key = PrivateKey.fromStringECDSA(args.privateKeyHex);
+  client.setOperator(AccountId.fromString(args.accountId), key);
+
+  try {
+    const response = await new TokenMintTransaction()
+      .setTokenId(TokenId.fromString(args.tokenId))
+      .setMetadata([bytes])
+      .execute(client);
+    const receipt = await response.getReceipt(client);
+    const transactionId = response.transactionId.toString();
+    return {
+      serials: (receipt.serials ?? []).map((s) => Number(s.toString())),
       transactionId,
       hashscanUrl: hashscanTxUrl(cfg, transactionId),
       status: receipt.status.toString(),
