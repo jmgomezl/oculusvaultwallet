@@ -14,14 +14,25 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx ./test/*.test.ts"
   },
-  "keywords": ["hedera", "ai-agent", "wallet", "allowance", "scheduled-transaction", "hcs", "oculusvault"],
+  "keywords": [
+    "hedera",
+    "ai-agent",
+    "wallet",
+    "allowance",
+    "scheduled-transaction",
+    "hcs",
+    "oculusvault"
+  ],
   "dependencies": {
     "@hashgraph/sdk": "^2.62.0"
   },
@@ -29,5 +40,18 @@
     "tsup": "^8.3.6",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jmgomezl/oculusvaultwallet.git",
+    "directory": "packages/agent"
+  },
+  "homepage": "https://oculusvault.com",
+  "bugs": {
+    "url": "https://github.com/jmgomezl/oculusvaultwallet/issues"
+  },
+  "author": "Juan Manuel González",
+  "publishConfig": {
+    "access": "public"
   }
 }

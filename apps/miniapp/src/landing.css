@@ -456,6 +456,36 @@
   margin: 0 auto;
   padding: 76px 28px 0;
 }
+
+/* ── agent desk (flagship) ──────────────────────────────────────────── */
+.lp-agents .lp-stamp {
+  margin-bottom: 6px;
+}
+.lp-code {
+  margin: 34px auto 0;
+  max-width: 720px;
+  padding: 20px 22px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 6px;
+  box-shadow: 5px 5px 0 rgba(28, 26, 20, 0.18);
+  overflow-x: auto;
+}
+.lp-code code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre;
+}
+.lp-agents .lp-fine {
+  text-align: center;
+  max-width: 46em;
+  margin-left: auto;
+  margin-right: auto;
+}
+.lp-agents .lp-cta {
+  margin-top: 26px;
+}
 .lp-h2 {
   font-family: "Zodiak", serif;
   font-weight: 900;

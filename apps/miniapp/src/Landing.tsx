@@ -32,6 +32,7 @@ export function Landing() {
           <span>OculusVault</span>
         </a>
         <div className="lp-nav-links">
+          <a href="#agents">Agent Desk</a>
           <a href="#how">How it works</a>
           <a href="#security">Security</a>
           <a href="/hardware.html">Ledger</a>
@@ -86,6 +87,62 @@ export function Landing() {
             <div className="lp-stat-small">{small}</div>
           </div>
         ))}
+      </section>
+
+      <section className="lp-section lp-agents" id="agents">
+        <span className="lp-stamp lp-stamp-green">New · the Agent Desk</span>
+        <h2 className="lp-h2">Parental controls for AI&nbsp;agents</h2>
+        <p className="lp-sub">
+          The first wallet that hires wallets <em>for</em> your AI agents. Give
+          an agent a real Hedera account and a budget — while you stay co-owner
+          at the <strong>protocol level</strong>. Freeze it, sweep the funds
+          home, or retire it at any moment. Enforced by the network's key
+          structure, never by policy.
+        </p>
+        <div className="lp-cards">
+          <Card
+            n="I"
+            title="Petty cash"
+            body="The agent gets its own funded account (a 1-of-2 key with you) and spends autonomously within it. Freeze rotates its key out — the next transaction simply fails."
+          />
+          <Card
+            n="II"
+            title="Allowances"
+            body="Cap what the agent may draw from YOUR balance, per asset (HIP-336). The network enforces the cap; revoking takes one tap and is instant."
+          />
+          <Card
+            n="III"
+            title="Ask-me first"
+            body="Above budget? The agent files a request only YOUR signature can execute. It appears in your wallet like a consent card — decoded from the transaction bytes, not the agent's memo."
+          />
+        </div>
+        <pre className="lp-code">
+          <code>{`import { OculusAgent } from "@oculusvault/agent";
+
+const agent = OculusAgent.connect(credentials); // shown once, in your wallet
+
+await agent.spend("0.0.4242", "1.5");           // its own petty cash
+await agent.drawFromOwner("2");                 // your balance, your cap
+const req = await agent.requestApproval({ amountHbar: "50" });
+await agent.waitForApproval(req);               // blocks until YOU sign
+await agent.logActivity("bought the dataset");  // public, tamper-evident log`}</code>
+        </pre>
+        <p className="lp-fine">
+          Every agent can keep a public audit logbook on Hedera Consensus
+          Service — only its key writes, anyone verifies. Works with LangChain,
+          ElizaOS, Hedera Agent Kit, or ten lines of Node.
+        </p>
+        <div className="lp-cta lp-cta-center">
+          <TelegramCta size="lg" />
+          <a
+            className="lp-btn lp-btn-ghost lp-btn-lg"
+            href={`${GITHUB}/tree/main/packages/agent`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            @oculusvault/agent on GitHub
+          </a>
+        </div>
       </section>
 
       <section className="lp-section" id="how">
