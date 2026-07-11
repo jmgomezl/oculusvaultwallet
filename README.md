@@ -339,7 +339,11 @@ same interface and pass it to `OculusVault` — nothing else changes.
 - ✅ **WalletConnect (HIP-820) signer** in the Mini App (env-gated on
   `VITE_WC_PROJECT_ID`): dApps like SaucerSwap use the wallet as their
   signer — swaps/DeFi happen on the dApp's own UI, this wallet only shows
-  and approves what gets signed.
+  and approves what gets signed. Live-verified end-to-end on testnet: a
+  SaucerSwap HBAR→SAUCE swap paired, signed with the account's ECDSA key,
+  and landed on-chain. (secp256k1 note: the WC signer must receive a
+  DER-encoded key — a raw-hex key trips `PrivateKey.fromString`'s ED25519
+  default and every signature fails precheck with `INVALID_SIGNATURE`.)
 - 🚫 No previewnet USDC: Circle doesn't mint USDC on previewnet (it resets
   regularly) — the Tokens card degrades to add-by-id there automatically.
 
