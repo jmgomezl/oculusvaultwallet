@@ -37,7 +37,10 @@ import {
 } from "@oculusvault/sdk";
 import { getNetworkConfig } from "@oculusvault/sdk";
 import { authenticate, isDemoMode, syncAgentWatchList, type AuthResult } from "./api.js";
-import { WcBridge, type WcProposal, type WcRequest, type WcSession } from "./wcBridge.js";
+// Type-only: the WalletConnect stack (~2 MB of deps) is loaded lazily via
+// dynamic import when the Connect card actually initializes — first paint
+// must not pay for it.
+import type { WcBridge, WcProposal, WcRequest, WcSession } from "./wcBridge.js";
 import { createWallet, DEFAULT_NETWORK } from "./walletFactory.js";
 import { Qr } from "./Qr.js";
 import { Landing } from "./Landing.js";
@@ -96,6 +99,27 @@ function payLine(p: PayIntent): string {
   return `${what} to ${shortAddr(p.to)}`;
 }
 
+/**
+ * WalletConnect deep link: a start param of `wc_<base64url(wc: URI)>` lets a
+ * dApp send the user straight into pairing (t.me/<bot>/app?startapp=wc_…).
+ * This only ever auto-PAIRS — the session proposal still needs the user's
+ * explicit tap in ConnectCard. Strict anyway: charset comes guaranteed by
+ * Telegram (A-Za-z0-9_- only), length is bounded, and the decoded string
+ * must be a wc: link.
+ */
+const WC_PARAM_RE = /^wc_([A-Za-z0-9_-]{4,700})$/;
+function parseWcDeepLink(param: string | null | undefined): string | null {
+  const m = param ? WC_PARAM_RE.exec(param) : null;
+  if (!m) return null;
+  try {
+    const b64 = m[1]!.replace(/-/g, "+").replace(/_/g, "/");
+    const uri = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
+    return uri.startsWith("wc:") && uri.length <= 1024 ? uri : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Device-local passkey quick-unlock record (per user). The password-encrypted
  * vault record stays canonical; this only caches a passkey-wrapped copy. */
 const pkqKey = (uid: string) => `oculusvault:pkq:${uid}`;
@@ -148,6 +172,11 @@ function WalletApp() {
   const [pendingPay, setPendingPay] = useState<PayIntent | null>(() =>
     parsePayIntent(getStartParam() ?? ""),
   );
+  /** A wc_ deep-link auto-pairs after unlock (same sourcing rules as pay
+   * intents); the user still approves the session in ConnectCard. */
+  const [pendingWc, setPendingWc] = useState<string | null>(() =>
+    parseWcDeepLink(getStartParam()),
+  );
 
   useEffect(() => {
     (async () => {
@@ -157,6 +186,8 @@ function WalletApp() {
         if (a.startParam) {
           const verified = parsePayIntent(a.startParam);
           if (verified) setPendingPay(verified);
+          const wc = parseWcDeepLink(a.startParam);
+          if (wc) setPendingWc(wc);
         }
         walletRef.current = createWallet(loadSavedNetwork());
         const exists = await walletRef.current.hasWallet(a.userId);
@@ -340,6 +371,7 @@ function WalletApp() {
         onRecover={startRecover}
         onPasskeyUnlock={!isNew && pkRecord ? onPasskeyUnlock : undefined}
         pendingPay={pendingPay}
+        pendingWc={pendingWc != null}
       />
     );
   }
@@ -372,6 +404,8 @@ function WalletApp() {
         onEnablePasskey={onEnablePasskey}
         onDismissPasskey={() => setPkOffer(false)}
         intent={pendingPay}
+        wcIntent={pendingWc}
+        onWcConsumed={() => setPendingWc(null)}
       />
     </>
   );
@@ -421,6 +455,7 @@ function UnlockScreen({
   onRecover,
   onPasskeyUnlock,
   pendingPay,
+  pendingWc,
 }: {
   isNew: boolean;
   username?: string;
@@ -428,6 +463,8 @@ function UnlockScreen({
   onRecover: () => void;
   onPasskeyUnlock?: () => Promise<void>;
   pendingPay?: PayIntent | null;
+  /** True when a wc_ deep-link is waiting to pair after unlock. */
+  pendingWc?: boolean;
 }) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -476,6 +513,18 @@ function UnlockScreen({
           ? "Pick a password. It encrypts your key on this device — we never see it, and it can’t be recovered if lost."
           : `${username ? "@" + username + " · " : ""}Enter your password to unlock.`}
       </p>
+      {pendingWc && !pendingPay && (
+        <div className="banner">
+          <div>
+            <strong>App connection waiting.</strong>
+            <span className="muted small">
+              {" "}An app wants to connect via WalletConnect —{" "}
+              {isNew ? "create your vault" : "unlock"} to review it. Nothing
+              connects without your approval.
+            </span>
+          </div>
+        </div>
+      )}
       {pendingPay && (
         <div className="banner">
           <div>
@@ -681,6 +730,8 @@ function Dashboard({
   onEnablePasskey,
   onDismissPasskey,
   intent,
+  wcIntent,
+  onWcConsumed,
 }: {
   wallet: OculusVault;
   identity: WalletIdentity;
@@ -694,6 +745,9 @@ function Dashboard({
   /** A pay deep-link (NFC tag / QR / t.me link) jumps straight to Send.
    * Resolved by WalletApp (server-verified source preferred). */
   intent: PayIntent | null;
+  /** A wc_ deep-link's decoded wc: URI — auto-paired once, then consumed. */
+  wcIntent: string | null;
+  onWcConsumed: () => void;
 }) {
   const [view, setView] = useState<View>(intent ? "send" : "home");
   const [balance, setBalance] = useState<Balance | null>(null);
@@ -766,6 +820,13 @@ function Dashboard({
   useEffect(() => {
     if (exportOpen && custodyRef.current) custodyRef.current.open = true;
   }, [exportOpen]);
+
+  // A wc_ deep-link pulls the Connect drawer open so the pairing status and
+  // the session-proposal card are in view when they arrive.
+  const connectRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (wcIntent && connectRef.current) connectRef.current.open = true;
+  }, [wcIntent]);
 
   const usd = balance ? formatUsd(balance.usdEstimate) : null;
 
@@ -1111,11 +1172,13 @@ function Dashboard({
           accountReady={identity.hederaAccountId != null}
         />
       </Drawer>
-      <Drawer title="Connect to apps" sum="keep open while in use">
+      <Drawer title="Connect to apps" sum="keep open while in use" innerRef={connectRef}>
         <ConnectCard
           wallet={wallet}
           network={network}
           accountReady={identity.hederaAccountId != null}
+          autoPairUri={wcIntent}
+          onAutoPaired={onWcConsumed}
         />
       </Drawer>
       <Drawer title="Self-custody" sum="export your key" innerRef={custodyRef}>
@@ -2221,10 +2284,17 @@ function ConnectCard({
   wallet,
   network,
   accountReady,
+  autoPairUri,
+  onAutoPaired,
 }: {
   wallet: OculusVault;
   network: HederaNetwork;
   accountReady: boolean;
+  /** Pre-validated wc: URI from a wc_ deep link — paired automatically once
+   * the bridge is up. Pairing only: the proposal card below still gates the
+   * session on the user's tap, exactly like a pasted link. */
+  autoPairUri?: string | null;
+  onAutoPaired?: () => void;
 }) {
   const [bridge, setBridge] = useState<WcBridge | null>(null);
   const [sessions, setSessions] = useState<WcSession[]>([]);
@@ -2237,20 +2307,23 @@ function ConnectCard({
   useEffect(() => {
     if (!WC_PROJECT_ID || !accountReady) return;
     let dead = false;
-    WcBridge.create({
-      projectId: WC_PROJECT_ID,
-      network,
-      wallet,
-      onProposal: (p) => {
-        if (!dead) setProposal(p);
-      },
-      onRequest: (r) => {
-        if (!dead) setRequest(r);
-      },
-      onSessionsChanged: (s) => {
-        if (!dead) setSessions(s);
-      },
-    })
+    import("./wcBridge.js")
+      .then(({ WcBridge }) =>
+        WcBridge.create({
+          projectId: WC_PROJECT_ID,
+          network,
+          wallet,
+          onProposal: (p) => {
+            if (!dead) setProposal(p);
+          },
+          onRequest: (r) => {
+            if (!dead) setRequest(r);
+          },
+          onSessionsChanged: (s) => {
+            if (!dead) setSessions(s);
+          },
+        }),
+      )
       .then((b) => {
         if (!dead) setBridge(b);
       })
@@ -2284,6 +2357,16 @@ function ConnectCard({
     const text = await scanQr("Scan the app’s WalletConnect QR");
     if (text) await pair(text);
   };
+
+  // Deep-link pairing: consume the intent first (so a network-switch remount
+  // never pairs twice), then pair exactly as if the user had pasted the link.
+  useEffect(() => {
+    if (!bridge || !autoPairUri) return;
+    onAutoPaired?.();
+    void pair(autoPairUri);
+    // pair is re-created per render; the guard above makes it run-once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge, autoPairUri]);
 
   const act = async (
     fn: () => Promise<void>,

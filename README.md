@@ -344,6 +344,24 @@ same interface and pass it to `OculusVault` — nothing else changes.
   and landed on-chain. (secp256k1 note: the WC signer must receive a
   DER-encoded key — a raw-hex key trips `PrivateKey.fromString`'s ED25519
   default and every signature fails precheck with `INVALID_SIGNATURE`.)
+
+  **Deep-link pairing** — dApps can skip the copy/paste step and send users
+  straight into pairing by opening the Mini App with a WalletConnect start
+  param:
+
+  ```
+  https://t.me/oculusvaultbot/app?startapp=wc_<base64url(wc: URI)>
+  ```
+
+  The Mini App decodes the param after the vault is unlocked and calls
+  `pair()` automatically; the user still sees and approves the normal
+  session-proposal card — deep links only auto-*pair*, never auto-approve.
+  dApp-side recipe: `'wc_' + btoa(uri).replace(/\+/g,'-').replace(/\//g,'_')
+  .replace(/=+$/,'')`. Constraint: Telegram `start_param` accepts only
+  `A-Za-z0-9_-` (hence base64url) and caps at ~512 chars — a `wc:` URI with
+  long relay params can overflow it, so dApps should check the encoded
+  length and fall back to copying the URI to the clipboard and opening the
+  Mini App plain (the paste flow above always works).
 - 🚫 No previewnet USDC: Circle doesn't mint USDC on previewnet (it resets
   regularly) — the Tokens card degrades to add-by-id there automatically.
 
